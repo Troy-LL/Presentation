@@ -10,7 +10,8 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "dev:party": "partykit dev --config partykit.json"
+    "dev:party": "partykit dev --config partykit.json",
+    "deploy:party": "partykit deploy --config partykit.json"
   },
   "dependencies": {
     "@interactive-presentation/types": "0.1.0",
