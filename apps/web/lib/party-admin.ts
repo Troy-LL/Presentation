@@ -20,7 +20,11 @@ const snapshotSchema = z.object({
 });
 
 function getPartyBaseUrl() {
-  return (process.env.PARTYKIT_SERVER_URL ?? "http://127.0.0.1:1999").replace(/\/$/, "");
+  let url = process.env.PARTYKIT_SERVER_URL ?? "http://127.0.0.1:1999";
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    url = `https://${url}`;
+  }
+  return url.replace(/\/$/, "");
 }
 
 function roomUrl(sessionCode: string) {
