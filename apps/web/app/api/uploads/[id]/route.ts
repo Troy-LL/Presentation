@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+
 import { getUpload } from "@/lib/upload-store";
 
 export async function GET(

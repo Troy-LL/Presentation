@@ -36,8 +36,10 @@ export function deleteUpload(id: string) {
 }
 
 // Optional: Clear old files periodically
-if (globalThis && !(globalThis as any)._uploadCleanupStarted) {
-  (globalThis as any)._uploadCleanupStarted = true;
+const globalStore = globalThis as unknown as { _uploadCleanupStarted?: boolean };
+
+if (globalStore && !globalStore._uploadCleanupStarted) {
+  globalStore._uploadCleanupStarted = true;
   setInterval(() => {
     const now = Date.now();
     for (const [id, file] of store.entries()) {
