@@ -88,6 +88,7 @@ export function useSessionConnection({
           );
           break;
         case "server.interaction_started":
+          prevInteractionRef.current = message.interaction;
           setSnapshot((current) =>
             current
               ? {
@@ -97,6 +98,30 @@ export function useSessionConnection({
                 }
               : current
           );
+          break;
+        case "server.poll_votes_updated":
+          setSnapshot((current) => {
+            if (!current || current.currentInteraction?.type !== "poll") return current;
+            return {
+              ...current,
+              currentInteraction: {
+                ...current.currentInteraction,
+                votes: message.votes
+              }
+            };
+          });
+          break;
+        case "server.poll_results_revealed":
+          setSnapshot((current) => {
+            if (!current || current.currentInteraction?.type !== "poll") return current;
+            return {
+              ...current,
+              currentInteraction: {
+                ...current.currentInteraction,
+                resultsRevealed: true
+              }
+            };
+          });
           break;
         case "server.interaction_cleared":
           if (prevInteractionRef.current !== null) {
@@ -136,40 +161,33 @@ export function useSessionConnection({
   const actions = useMemo(
     () => ({
       startPrompt(text: string) {
-        if (!socketRef.current || !hostToken) {
-          return;
-        }
-
-        const message: ClientMessage = {
-          type: "client.start_prompt",
-          hostToken,
-          text: text.trim()
-        };
-
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.start_prompt", hostToken, text: text.trim() };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      startPoll(question: string, options: string[]) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.start_poll", hostToken, question, options };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      submitVote(optionId: string) {
+        if (!socketRef.current) return;
+        const message: ClientMessage = { type: "client.submit_vote", optionId };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      revealPollResults() {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.reveal_poll_results", hostToken };
         socketRef.current.send(JSON.stringify(message));
       },
       clearInteraction() {
-        if (!socketRef.current || !hostToken) {
-          return;
-        }
-
-        const message: ClientMessage = {
-          type: "client.clear_interaction",
-          hostToken
-        };
-
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.clear_interaction", hostToken };
         socketRef.current.send(JSON.stringify(message));
       },
       closeSession() {
-        if (!socketRef.current || !hostToken) {
-          return;
-        }
-
-        const message: ClientMessage = {
-          type: "client.close_session",
-          hostToken
-        };
-
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.close_session", hostToken };
         socketRef.current.send(JSON.stringify(message));
       }
     }),

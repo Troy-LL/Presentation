@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { SessionSnapshot } from "@interactive-presentation/types";
 
+import { AudiencePoll } from "@/components/audience-poll";
 import { getOrCreateParticipantId } from "@/lib/identity";
 import { useSessionConnection } from "@/lib/use-session-connection";
 
@@ -57,7 +58,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     };
   }, [sessionCode]);
 
-  const { snapshot, connectionState, sessionEnded, error } = useSessionConnection({
+  const { snapshot, connectionState, sessionEnded, error, submitVote } = useSessionConnection({
     sessionCode,
     role: "audience",
     participantId,
@@ -124,6 +125,15 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
           </p>
         </div>
       </main>
+    );
+  }
+
+  if (snapshot.currentInteraction?.type === "poll") {
+    return (
+      <AudiencePoll
+        onVote={submitVote}
+        poll={snapshot.currentInteraction}
+      />
     );
   }
 

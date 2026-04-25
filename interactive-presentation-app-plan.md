@@ -146,17 +146,17 @@ Audience device  ──WebSocket──┼──► Session server ──► Host
 ## 8. Build Phases
 
 ### Phase 1 — Core Loop (Week 1–2)
-- [ ] Session creation with invite code + QR code generation
-- [ ] Audience join flow (no auth required)
-- [ ] Blank lobby screen
-- [ ] WebSocket connection (host ↔ audience)
-- [ ] First working mode: **Crowd Prompt** (host types text → audience sees it full screen)
+- [x] Session creation with invite code + QR code generation
+- [x] Audience join flow (no auth required)
+- [x] Blank lobby screen
+- [x] WebSocket connection (host ↔ audience)
+- [x] First working mode: **Crowd Prompt** (host types text → audience sees it full screen)
 
 ### Phase 2 — Polling (Week 3)
-- [ ] Host can create a poll with 2–10 options
-- [ ] Audience sees tap-to-vote buttons
-- [ ] Live vote counts update on all screens simultaneously
-- [ ] Host can close the poll and reveal final results
+- [x] Host can create a poll with 2–10 options
+- [x] Audience sees tap-to-vote buttons
+- [x] Live vote counts update on all screens simultaneously
+- [x] Host can close the poll and reveal final results
 
 ### Phase 3 — More Modes (Week 4–5)
 - [ ] Quiz mode (poll + reveal correct answer)
