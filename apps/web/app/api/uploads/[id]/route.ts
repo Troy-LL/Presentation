@@ -12,7 +12,7 @@ export async function GET(
     return new Response("File not found", { status: 404 });
   }
 
-  return new Response(file.content, {
+  return new Response(new Uint8Array(file.content), {
     headers: {
       "Content-Type": file.contentType,
       "Content-Disposition": `inline; filename="${file.filename}"`,
