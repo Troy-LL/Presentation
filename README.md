@@ -13,7 +13,6 @@
   <p align="center">
     <a href="#🚀-quick-start">Quick Start</a> •
     <a href="#✨-key-features">Features</a> •
-    <a href="#🐳-self-hosting">Self-Hosting</a> •
     <a href="#🛠-tech-stack">Tech Stack</a>
   </p>
 </div>
@@ -50,6 +49,7 @@ There are tools out there, but they usually come with strings attached—they ha
 | **🎮 Interactive Slides** | Upload a PDF and overlay live prompts or emojis directly on your slides. |
 | **🔥 Emoji Reactions** | Let the audience flood the screen with reactions during key moments. |
 | **⏲️ Sync Timers** | Start a countdown that hits zero on every device at the exact same time. |
+| **🔔 Attention Nudge** | Vibrate every phone in the room and show a custom alert to bring focus back to you. |
 
 ---
 
@@ -71,36 +71,11 @@ Best for classrooms, local meetups, or offline events. **No internet required** 
 
 3. **Launch**:
    ```bash
-   npm run dev
+   npm run local
    ```
+   *This will automatically detect your LAN IP and print the dashboard link for you.*
 
-4. **Connect**: Open `http://localhost:3000/host` to see your dashboard and your room's QR code.
-
----
-
-## 🐳 Self-Hosting (Docker)
-
-Deploy your own instance in seconds with Docker Compose. This starts both the web application and the WebSocket server.
-
-```bash
-docker-compose up -d
-```
-> [!TIP]
-> Access the dashboard at `http://localhost:3000/host`.
-
----
-
-## ☁️ Cloud Deployment
-
-### 1. Frontend (Vercel)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTroy-LL%2FPresentation)
-
-### 2. WebSockets (PartyKit)
-```bash
-cd apps/web
-npx partykit deploy
-```
-*Make sure to set `NEXT_PUBLIC_MODE=cloud` in your Vercel environment variables.*
+4. **Connect**: Follow the links printed in your terminal to see your dashboard and your room's QR code.
 
 ---
 
