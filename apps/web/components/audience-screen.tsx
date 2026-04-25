@@ -19,6 +19,33 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nudgeMessage, setNudgeMessage] = useState<string | null>(null);
+  const [flashColor, setFlashColor] = useState<string | null>(null);
+
+  const playNudgeSound = () => {
+    try {
+      const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+      if (!AudioContextClass) return;
+      
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, ctx.currentTime); // High pitch "ping"
+      
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.05, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    } catch (e) {
+      // Silent fail if audio is blocked
+    }
+  };
 
   useEffect(() => {
     setParticipantId(getOrCreateParticipantId(sessionCode));
@@ -85,13 +112,32 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     if (!latestAttentionNudge) return;
 
     setNudgeMessage(latestAttentionNudge.message);
+    
+    // Pick a random "safe" (pastel/darker) color for the flash
+    const colors = ["rgba(255, 95, 31, 0.15)", "rgba(59, 130, 246, 0.15)", "rgba(168, 85, 247, 0.15)", "rgba(34, 197, 94, 0.15)"];
+    setFlashColor(colors[Math.floor(Math.random() * colors.length)]);
+
+    // Vibrate (Android only)
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
       navigator.vibrate?.([120, 80, 120]);
     }
 
-    const timer = window.setTimeout(() => setNudgeMessage(null), 2600);
+    // Play Sound (Works if user has interacted once)
+    playNudgeSound();
+
+    const timer = window.setTimeout(() => {
+      setNudgeMessage(null);
+      setFlashColor(null);
+    }, 2600);
     return () => window.clearTimeout(timer);
   }, [latestAttentionNudge]);
+
+  const flashOverlay = flashColor ? (
+    <div 
+      className="pointer-events-none fixed inset-0 z-[60] transition-opacity duration-300"
+      style={{ backgroundColor: flashColor }}
+    />
+  ) : null;
 
   const nudgeBanner = nudgeMessage ? (
     <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
@@ -105,6 +151,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
           <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Joining session…</p>
         </main>
@@ -116,6 +163,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
           <div className="max-w-md text-center">
             <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Session unavailable</p>
@@ -141,6 +189,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
           <div className="max-w-md text-center">
             <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Session Closed</p>
@@ -160,6 +209,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <AudiencePoll
           onVote={submitVote}
           poll={snapshot.currentInteraction}
@@ -172,6 +222,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <main className="flex min-h-screen items-center justify-center bg-white px-8 text-center">
           <div className="max-w-5xl">
             <p className="text-sm uppercase tracking-[0.28em] text-slate-300">Live prompt</p>
@@ -189,6 +240,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <AudienceQuiz
           onSubmitAnswer={submitQuizAnswer}
           quiz={snapshot.currentInteraction}
@@ -201,6 +253,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <AudienceReactions
           onSendReaction={sendReaction}
           reactions={snapshot.currentInteraction}
@@ -213,6 +266,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <AudienceOpenText
           interaction={snapshot.currentInteraction}
           onSubmit={submitTextResponse}
@@ -225,6 +279,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <AudienceCountdown interaction={snapshot.currentInteraction} />
       </>
     );
@@ -234,6 +289,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
+      {flashOverlay}
         <AudienceSlideStage interaction={snapshot.currentInteraction} />
       </>
     );
@@ -242,6 +298,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
   return (
     <>
       {nudgeBanner}
+      {flashOverlay}
       <main className="relative flex min-h-screen items-center justify-center bg-white px-4 py-6 text-center sm:px-6">
         {connectionState === "disconnected" && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-500 shadow-sm">
