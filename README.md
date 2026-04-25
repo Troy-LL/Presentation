@@ -1,94 +1,157 @@
-# Interactive Presentation App
+<div align="center">
+  <img src="./public/hero.png" alt="Localhost Logo" width="800">
 
-![Hero Image](./public/hero.png)
+  # Interactive Presentation App
+  
+  **Presentations that breathe. Audience participation that actually works.**
 
-> A lightweight, open-source web app that makes presentations and study sessions genuinely interactive for crowds of 10–100+ people.
+  [![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg)](https://opensource.org/licenses/MIT)
+  [![Next.js 15](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
+  [![PartyKit](https://img.shields.io/badge/Real--time-PartyKit-blueviolet)](https://www.partykit.io/)
+  [![Docker Support](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com/)
 
-## ✨ Features
+  <p align="center">
+    <a href="#🚀-quick-start">Quick Start</a> •
+    <a href="#✨-key-features">Features</a> •
+    <a href="#🐳-self-hosting">Self-Hosting</a> •
+    <a href="#🛠-tech-stack">Tech Stack</a>
+  </p>
+</div>
 
-- **Host Dashboard**: Full control over what the audience sees — polls, prompts, quizzes, and more.
-- **Instant Join**: Audience members join via QR code or short code. No accounts, no downloads.
-- **Real-time Sync**: Everything updates instantly across all devices using WebSockets (via PartyKit).
-- **Multiple Modes**: 
-  - **Crowd Prompt**: Send bold, full-screen cues to everyone.
-  - **Live Polls**: Create on-the-fly polls with real-time bar charts.
-  - **Quizzes**: Test knowledge with reveals for correct answers.
-  - **Open Text**: Gather responses and stream them to the host screen.
-  - **Reactions**: Let the audience shower the screen with emojis.
-  - **Countdown**: Sync a big timer across all devices.
-- **Slide Deck Engine**: Upload PDFs and sync slide transitions with interaction overlays.
-- **Zero-Ops Deployment**: Works on Localhost (offline), Vercel, or via Docker.
+---
+
+## 💡 Why this exists?
+
+Traditional presentations are a one-way street. Audience members sit in silence, and polling apps often require clunky downloads or paid accounts. 
+
+This app is built for **zero friction**:
+- **No Accounts**: Hosts and audience just show up and start.
+- **No Downloads**: Everything runs in the browser.
+- **Privacy First**: Fully self-hostable. Your data stays in your room.
+- **Ultra Low Latency**: Real-time interactions synced in milliseconds.
+
+---
+
+## 📖 The Story
+
+"I'm always at events, and I often find myself losing track of the presentation or not being able to see the slides clearly from the back. I kept thinking: *there has to be a better way to make this interactive.* 
+
+There are tools out there, but they usually come with strings attached—they harvest your data, require annoying accounts, or just aren't the flexible 'Swiss Army Knife' I was looking for. So, I decided to build it myself. A tool that is fast, private, and focused entirely on the connection between the host and the audience." — *The Creator*
+
+---
+
+## ✨ Key Features
+
+| Feature | Description |
+| :--- | :--- |
+| **🎨 Host Dashboard** | A powerful control center to launch interactions and monitor live results. |
+| **📱 Instant Join** | One QR code scan. That's it. No sign-up, no "joining" screens. |
+| **📊 Live Polls** | Create polls on the fly and watch results stream in with smooth animations. |
+| **🎮 Interactive Slides** | Upload a PDF and overlay live prompts or emojis directly on your slides. |
+| **🔥 Emoji Reactions** | Let the audience flood the screen with reactions during key moments. |
+| **⏲️ Sync Timers** | Start a countdown that hits zero on every device at the exact same time. |
+
+---
 
 ## 🚀 Quick Start (Localhost)
 
-Best for classrooms or events on the same Wi-Fi. No internet required after initial setup.
+Best for classrooms, local meetups, or offline events. **No internet required** after dependencies are installed.
 
-1. **Install dependencies**:
+1. **Clone & Install**:
    ```bash
+   git clone https://github.com/Troy-LL/Presentation.git
+   cd Presentation
    npm install
    ```
-2. **Setup environment**:
+
+2. **Environment Setup**:
    ```bash
    cp .env.example .env.local
    ```
-3. **Run development server**:
+
+3. **Launch**:
    ```bash
    npm run dev
    ```
-4. **Share**: Point your camera at the QR code shown on the host dashboard (accessible at `http://localhost:3000/host`).
 
-## ☁️ Cloud Deployment (Vercel + PartyKit)
+4. **Connect**: Open `http://localhost:3000/host` to see your dashboard and your room's QR code.
 
-1. **Deploy Frontend**: Click the button below to deploy to Vercel.
-   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTroy-LL%2FPresentation)
-2. **Deploy WebSocket Server**:
-   ```bash
-   npx partykit deploy
-   ```
-3. **Configure Environment**: Ensure `NEXT_PUBLIC_MODE` is set to `cloud`.
+---
 
 ## 🐳 Self-Hosting (Docker)
 
-Run the full stack with a single command:
+Deploy your own instance in seconds with Docker Compose. This starts both the web application and the WebSocket server.
 
 ```bash
 docker-compose up -d
 ```
+> [!TIP]
+> Access the dashboard at `http://localhost:3000/host`.
 
-Access the host dashboard at `http://localhost:3000/host`.
+---
+
+## ☁️ Cloud Deployment
+
+### 1. Frontend (Vercel)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTroy-LL%2FPresentation)
+
+### 2. WebSockets (PartyKit)
+```bash
+cd apps/web
+npx partykit deploy
+```
+*Make sure to set `NEXT_PUBLIC_MODE=cloud` in your Vercel environment variables.*
+
+---
 
 ## 🛠 Tech Stack
 
-- **Frontend**: Next.js 15, Tailwind CSS, Framer Motion
-- **Real-time**: PartyKit / PartySocket
-- **PDF Engine**: PDF.js
-- **Icons**: Lucide React
+- **Framework**: [Next.js 15](https://nextjs.org/) (App Router)
+- **Real-time**: [PartyKit](https://www.partykit.io/) (Cloudflare Workers based)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **Animations**: [Framer Motion](https://www.framer.com/motion/)
+- **PDF Processing**: [PDF.js](https://mozilla.github.io/pdf.js/)
+- **Icons**: [Lucide React](https://lucide.dev/)
+
+---
 
 ## 📖 Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NEXT_PUBLIC_MODE` | `local` or `cloud` | `local` |
-| `NEXT_PUBLIC_APP_URL` | The public URL of the app | `http://localhost:3000` |
-| `NEXT_PUBLIC_PARTYKIT_HOST` | WebSocket host address | `localhost:3001` |
-| `PARTYKIT_SERVER_URL` | Internal URL for API-to-Party communication | `http://localhost:3001` |
+| Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `NEXT_PUBLIC_MODE` | `local` | Set to `cloud` when deploying to production. |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | The public URL shown in QR codes. |
+| `NEXT_PUBLIC_PARTYKIT_HOST` | `localhost:3001` | The WebSocket server address. |
+
+---
 
 ## 🛠 Troubleshooting
 
-### LAN Connection Issues
-If audience phones cannot connect to your local machine:
-- **Same Wi-Fi**: Ensure all devices are on the same local network.
-- **Firewall**: Your host machine's firewall might be blocking port 3000 or 3001. Try temporarily disabling it or adding an exception.
-- **IP Address**: The QR code uses the value of `NEXT_PUBLIC_APP_URL`. If you are on a LAN, this should be your local IP (e.g., `http://192.168.1.50:3000`).
+<details>
+<summary><b>My audience can't connect to my local IP</b></summary>
+- Ensure all devices are on the <b>same Wi-Fi</b> network.
+- Check that your `NEXT_PUBLIC_APP_URL` is set to your LAN IP (e.g., `http://192.168.1.50:3000`).
+- Check your local firewall settings (allow ports 3000 and 3001).
+</details>
 
-### WebSocket Connection (PartyKit)
-- **Local Mode**: Ensure the `party` service (port 3001) is running.
-- **Cloud Mode**: Verify your `NEXT_PUBLIC_PARTYKIT_HOST` matches your deployed PartyKit project name.
+<details>
+<summary><b>PDF slides aren't loading correctly</b></summary>
+- Large PDFs (>50MB) may take a moment to process.
+- Ensure the PDF is not password protected.
+</details>
+
+---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
-## 📄 License
+Check out our [CONTRIBUTING.md](./CONTRIBUTING.md) to get started!
 
-This project is licensed under the [MIT License](LICENSE).
+---
+
+<div align="center">
+  Built with ❤️ for better presentations. 
+  <br>
+  Released under the MIT License.
+</div>
