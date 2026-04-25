@@ -11,15 +11,15 @@ export default async function JoinPage({
   const initialCode = code?.toUpperCase() ?? "";
 
   return (
-    <main className="app-shell px-6 py-8 md:px-10">
+    <main className="app-shell px-4 py-6 sm:px-6 md:px-10 md:py-8">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl items-center">
         <div className="grid w-full gap-6 md:grid-cols-[1.1fr_0.9fr]">
-          <section className="panel rounded-[28px] p-8 md:p-10">
+          <section className="panel rounded-[28px] p-6 sm:p-8 md:p-10">
             <p className="text-sm uppercase tracking-[0.24em] soft-text">Audience join</p>
-            <h1 className="mt-4 max-w-xl text-4xl font-semibold tracking-tight md:text-6xl">
+            <h1 className="mt-4 max-w-xl text-3xl font-semibold tracking-tight sm:text-4xl md:text-6xl">
               Present something. Let the room answer back.
             </h1>
-            <p className="mt-5 max-w-xl text-lg leading-8 soft-text">
+            <p className="mt-5 max-w-xl text-base leading-7 soft-text sm:text-lg sm:leading-8">
               Join with a short code, wait in the lobby, and snap into the live prompt the second the host launches it.
             </p>
             <div className="mt-8">

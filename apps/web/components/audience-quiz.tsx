@@ -20,14 +20,14 @@ export function AudienceQuiz({ quiz, onSubmitAnswer }: Props) {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-6">
+    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
       <div className="w-full max-w-xl">
         <p className="text-center text-sm uppercase tracking-[0.28em] text-slate-300">Live quiz</p>
-        <h1 className="mt-6 text-center text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
+        <h1 className="mt-5 text-center text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl md:text-4xl">
           {quiz.payload.question}
         </h1>
 
-        <div className="mt-10 flex flex-col gap-3">
+        <div className="mt-8 flex flex-col gap-3">
           {quiz.payload.options.map((option) => {
             const isSelected = selectedAnswer === option.id;
             const isCorrect = option.id === quiz.payload.correctOptionId;
@@ -36,7 +36,7 @@ export function AudienceQuiz({ quiz, onSubmitAnswer }: Props) {
             return (
               <button
                 className={[
-                  "w-full rounded-2xl border px-6 py-4 text-left transition",
+                  "min-h-12 w-full rounded-2xl border px-5 py-4 text-left transition",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400",
                   reveal
                     ? isCorrect
@@ -56,7 +56,7 @@ export function AudienceQuiz({ quiz, onSubmitAnswer }: Props) {
                 type="button"
               >
                 <span className="flex items-center justify-between gap-4">
-                  <span className="text-base font-medium text-slate-800">{option.text}</span>
+                  <span className="text-[15px] font-medium text-slate-800 sm:text-base">{option.text}</span>
                   {quiz.answerRevealed && isCorrect && (
                     <span className="text-sm font-semibold text-green-700">Correct</span>
                   )}

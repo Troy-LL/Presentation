@@ -4,7 +4,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
-import type { SessionSnapshot } from "@interactive-presentation/types";
+import type { SessionHistoryEntry, SessionSnapshot } from "@interactive-presentation/types";
 
 import { HostPollResults } from "@/components/host-poll-results";
 import { HostCountdownResults } from "@/components/host-countdown-results";
@@ -36,6 +36,112 @@ function statLabel(value: string, label: string) {
   );
 }
 
+function analyticsCard(label: string, value: string, hint: string) {
+  return (
+    <div className="rounded-[20px] border border-black/8 bg-white/80 p-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] soft-text">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
+      <p className="mt-1 text-xs soft-text">{hint}</p>
+    </div>
+  );
+}
+
+function calculateHostAnalytics(snapshot: SessionSnapshot | null) {
+  if (!snapshot) {
+    return {
+      totalResponses: "0",
+      participationRate: "0%",
+      topSignal: "-",
+      engagement: "0"
+    };
+  }
+
+  const participants = snapshot.participantCount;
+  const interaction = snapshot.currentInteraction;
+
+  if (!interaction) {
+    return {
+      totalResponses: "0",
+      participationRate: participants > 0 ? "0%" : "-",
+      topSignal: "Lobby",
+      engagement: participants > 0 ? String(participants) : "0"
+    };
+  }
+
+  if (interaction.type === "poll") {
+    const totalVotes = Object.values(interaction.votes).reduce((acc, count) => acc + count, 0);
+    const topOption = interaction.payload.options.reduce<{ text: string; count: number } | null>((best, option) => {
+      const count = interaction.votes[option.id] ?? 0;
+      if (!best || count > best.count) return { text: option.text, count };
+      return best;
+    }, null);
+    const rate = participants > 0 ? `${Math.min(100, Math.round((totalVotes / participants) * 100))}%` : "-";
+
+    return {
+      totalResponses: String(totalVotes),
+      participationRate: rate,
+      topSignal: topOption && topOption.count > 0 ? topOption.text : "No votes yet",
+      engagement: participants > 0 ? `${totalVotes}/${participants}` : String(totalVotes)
+    };
+  }
+
+  if (interaction.type === "quiz") {
+    const totalAnswers = Object.values(interaction.votes).reduce((acc, count) => acc + count, 0);
+    const topOption = interaction.payload.options.reduce<{ text: string; count: number } | null>((best, option) => {
+      const count = interaction.votes[option.id] ?? 0;
+      if (!best || count > best.count) return { text: option.text, count };
+      return best;
+    }, null);
+    const rate = participants > 0 ? `${Math.min(100, Math.round((totalAnswers / participants) * 100))}%` : "-";
+
+    return {
+      totalResponses: String(totalAnswers),
+      participationRate: rate,
+      topSignal: topOption && topOption.count > 0 ? topOption.text : "No answers yet",
+      engagement: participants > 0 ? `${totalAnswers}/${participants}` : String(totalAnswers)
+    };
+  }
+
+  if (interaction.type === "reactions") {
+    const totalReactions = Object.values(interaction.reactionCounts).reduce((acc, count) => acc + count, 0);
+    const topEmoji = Object.entries(interaction.reactionCounts).reduce<{ emoji: string; count: number } | null>(
+      (best, [emoji, count]) => {
+        if (!best || count > best.count) return { emoji, count };
+        return best;
+      },
+      null
+    );
+    const avgPerParticipant = participants > 0 ? (totalReactions / participants).toFixed(1) : "0.0";
+    const proxyResponders = Math.min(participants, totalReactions);
+
+    return {
+      totalResponses: String(totalReactions),
+      participationRate: participants > 0 ? `${Math.round((proxyResponders / participants) * 100)}%` : "-",
+      topSignal: topEmoji && topEmoji.count > 0 ? topEmoji.emoji : "No reactions yet",
+      engagement: `${avgPerParticipant} avg per person`
+    };
+  }
+
+  if (interaction.type === "open_text") {
+    const totalResponses = interaction.responseCount;
+    const rate = participants > 0 ? `${Math.min(100, Math.round((totalResponses / participants) * 100))}%` : "-";
+
+    return {
+      totalResponses: String(totalResponses),
+      participationRate: rate,
+      topSignal: interaction.responses[0]?.text ?? "No responses yet",
+      engagement: participants > 0 ? `${totalResponses}/${participants}` : String(totalResponses)
+    };
+  }
+
+  return {
+    totalResponses: "0",
+    participationRate: participants > 0 ? "0%" : "-",
+    topSignal: interaction.type === "countdown" ? "Timer running" : interaction.type === "slides" ? "Slides live" : "Prompt live",
+    engagement: participants > 0 ? String(participants) : "0"
+  };
+}
+
 export function HostConsole({
   sessionCode,
   tokenFromUrl
@@ -47,6 +153,11 @@ export function HostConsole({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [hostToken, setHostToken] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+  const [historyEntries, setHistoryEntries] = useState<SessionHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // ── Mode switcher ────────────────────────────────────────────────────────
   const [mode, setMode] = useState<Mode>("prompt");
@@ -175,6 +286,7 @@ export function HostConsole({
     startOpenText,
     startCountdown,
     startSlideDeck,
+    sendAttentionNudge,
     setSlide,
     nextSlide,
     prevSlide,
@@ -230,6 +342,8 @@ export function HostConsole({
                   ? "Slides live"
                   : "Prompt live"
       : "Lobby idle";
+  const analytics = calculateHostAnalytics(snapshot);
+  const currentInteractionId = snapshot?.currentInteraction?.id ?? null;
 
   // poll option helpers
   const setOption = (index: number, value: string) => {
@@ -402,6 +516,63 @@ export function HostConsole({
     }
   }, [isClosed]);
 
+  useEffect(() => {
+    if (!hostToken || !initialSnapshot) return;
+
+    let active = true;
+    const loadHistory = async () => {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      try {
+        const response = await fetch(
+          `/api/sessions/${sessionCode}/history?hostToken=${encodeURIComponent(hostToken)}`,
+          { cache: "no-store" }
+        );
+        const payload = (await response.json()) as { history?: SessionHistoryEntry[]; error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Could not load session history.");
+        }
+        if (active) {
+          setHistoryEntries(payload.history ?? []);
+        }
+      } catch (caught) {
+        if (active) {
+          setHistoryError(caught instanceof Error ? caught.message : "Could not load session history.");
+        }
+      } finally {
+        if (active) {
+          setHistoryLoading(false);
+        }
+      }
+    };
+
+    void loadHistory();
+    return () => {
+      active = false;
+    };
+  }, [hostToken, initialSnapshot, sessionCode, currentInteractionId, snapshot?.status]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      setFullscreenError(null);
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      await document.documentElement.requestFullscreen();
+    } catch {
+      setFullscreenError("Fullscreen is unavailable in this browser context.");
+    }
+  };
+
   // ── Loading / error states ────────────────────────────────────────────────
   if (loading) {
     return (
@@ -432,14 +603,14 @@ export function HostConsole({
   }
 
   return (
-    <main className="app-shell px-6 py-6 md:px-8">
+    <main className="app-shell px-4 py-5 sm:px-6 md:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
         {/* Header */}
-        <header className="panel rounded-[28px] p-6 md:p-8">
+        <header className="panel rounded-[28px] p-5 sm:p-6 md:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-sm uppercase tracking-[0.24em] soft-text">Live host dashboard</p>
-              <h1 className="mt-3 text-4xl font-semibold tracking-tight md:text-5xl">
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl md:text-5xl">
                 Session {sessionCode}
               </h1>
               <p className="mt-4 max-w-2xl text-base leading-7 soft-text">
@@ -450,6 +621,20 @@ export function HostConsole({
               <span className="rounded-full border border-black/10 bg-white/80 px-4 py-2 text-sm font-semibold">
                 {connectionState === "connected" ? "Connected live" : "Connecting…"}
               </span>
+              <button
+                className="ghost-button inline-flex rounded-full border border-black/10 px-4 py-2 text-sm font-semibold transition hover:bg-white"
+                onClick={() => void toggleFullscreen()}
+                type="button"
+              >
+                {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              </button>
+              <button
+                className="accent-button inline-flex rounded-full px-4 py-2 text-sm font-semibold"
+                onClick={() => sendAttentionNudge("Look at your device now")}
+                type="button"
+              >
+                Attention nudge
+              </button>
               <a
                 className="ghost-button inline-flex rounded-full border border-black/10 px-4 py-2 text-sm font-semibold transition hover:bg-white"
                 href={joinUrl || `/join?code=${sessionCode}`}
@@ -459,6 +644,7 @@ export function HostConsole({
               </a>
             </div>
           </div>
+          {fullscreenError && <p className="mt-4 text-sm text-[var(--danger)]">{fullscreenError}</p>}
         </header>
 
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -468,6 +654,13 @@ export function HostConsole({
               {statLabel(sessionCode, "Invite code")}
               {statLabel(String(snapshot.participantCount), "Audience connected")}
               {statLabel(roomStateLabel, "Room state")}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {analyticsCard("Responses", analytics.totalResponses, "Live for active interaction")}
+              {analyticsCard("Participation", analytics.participationRate, "Response rate vs connected audience")}
+              {analyticsCard("Top signal", analytics.topSignal.length > 34 ? `${analytics.topSignal.slice(0, 34)}...` : analytics.topSignal, "Most selected/used right now")}
+              {analyticsCard("Engagement", analytics.engagement, "Quick activity snapshot")}
             </div>
 
             {/* Active poll live view replaces the control panel */}
@@ -718,11 +911,11 @@ export function HostConsole({
             ) : (
               <div className="panel rounded-[28px] p-6 md:p-8">
                 {/* Mode tabs */}
-                <div className="flex gap-1 rounded-2xl border border-black/8 bg-black/3 p-1 w-fit">
+                <div className="flex w-full gap-1 overflow-x-auto rounded-2xl border border-black/8 bg-black/3 p-1 sm:w-fit">
                   {(["prompt", "poll", "quiz", "reactions", "open_text", "countdown", "slides"] as Mode[]).map((m) => (
                     <button
                       className={[
-                        "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                        "whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition",
                         mode === m
                           ? "bg-white shadow-sm"
                           : "text-slate-500 hover:text-slate-800"
@@ -868,7 +1061,7 @@ export function HostConsole({
                         + Add option
                       </button>
                     )}
-                    <div className="mt-5 flex gap-3">
+                    <div className="mt-5 flex flex-wrap gap-3">
                       <button
                         className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={!pollQuestion.trim() || !validPollOptions || isClosed}
@@ -941,7 +1134,7 @@ export function HostConsole({
                     <p className="mt-3 text-sm soft-text">
                       Tap the check icon beside an option to mark it as the correct answer.
                     </p>
-                    <div className="mt-5 flex gap-3">
+                    <div className="mt-5 flex flex-wrap gap-3">
                       <button
                         className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={!quizQuestion.trim() || !validQuizOptions || !hasValidCorrectOption || isClosed}
@@ -974,7 +1167,7 @@ export function HostConsole({
                     <p className="mt-2 text-sm soft-text">
                       Add 2-8 emojis separated by spaces.
                     </p>
-                    <div className="mt-5 flex gap-3">
+                    <div className="mt-5 flex flex-wrap gap-3">
                       <button
                         className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={!validReactionsConfig || isClosed}
@@ -998,7 +1191,7 @@ export function HostConsole({
                       placeholder="Prompt shown to audience"
                       value={openTextPrompt}
                     />
-                    <div className="mt-5 flex gap-3">
+                    <div className="mt-5 flex flex-wrap gap-3">
                       <button
                         className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={!openTextPrompt.trim() || isClosed}
@@ -1043,7 +1236,7 @@ export function HostConsole({
                       value={countdownSeconds}
                     />
                     <p className="mt-2 text-sm soft-text">Allowed range: 3-3600 seconds.</p>
-                    <div className="mt-5 flex gap-3">
+                    <div className="mt-5 flex flex-wrap gap-3">
                       <button
                         className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={!countdownLabel.trim() || !validCountdown || isClosed}
@@ -1095,7 +1288,7 @@ export function HostConsole({
                       </span>
                       {slideLoadError && <span className="text-sm text-[var(--danger)]">{slideLoadError}</span>}
                     </div>
-                    <div className="mt-5 flex gap-3">
+                    <div className="mt-5 flex flex-wrap gap-3">
                       <button
                         className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={!validSlideDeck || isClosed || slideLoading}
@@ -1223,6 +1416,43 @@ export function HostConsole({
                   </p>
                 )}
               </div>
+            </div>
+
+            <div className="panel rounded-[28px] p-6 md:p-8">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm uppercase tracking-[0.22em] soft-text">Session history</p>
+                {historyLoading && <span className="text-xs soft-text">Refreshing…</span>}
+              </div>
+
+              {historyError ? (
+                <p className="mt-4 text-sm text-[var(--danger)]">{historyError}</p>
+              ) : historyEntries.length === 0 ? (
+                <p className="mt-4 text-sm soft-text">No completed interactions yet.</p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {historyEntries.slice(0, 8).map((entry) => (
+                    <div
+                      className="rounded-2xl border border-black/8 bg-white/85 p-4"
+                      key={entry.id}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-sm font-semibold uppercase tracking-[0.12em] soft-text">
+                          {entry.interactionType.replace("_", " ")}
+                        </p>
+                        <p className="text-xs soft-text">
+                          {new Date(entry.endedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                      <p className="mt-2 text-sm font-medium text-slate-900">{entry.title}</p>
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs soft-text">
+                        <span>Responses: {entry.responses}</span>
+                        <span>Audience: {entry.participantCountAtClose}</span>
+                        {entry.topSignal ? <span>Top: {entry.topSignal}</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </section>

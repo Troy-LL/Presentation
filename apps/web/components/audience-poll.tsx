@@ -23,14 +23,14 @@ export function AudiencePoll({ poll, onVote }: Props) {
   const showResults = poll.resultsRevealed || voted !== null;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-6">
+    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
       <div className="w-full max-w-lg">
         <p className="text-center text-sm uppercase tracking-[0.28em] text-slate-300">Live poll</p>
-        <h1 className="mt-6 text-center text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
+        <h1 className="mt-5 text-center text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl md:text-4xl">
           {poll.payload.question}
         </h1>
 
-        <div className="mt-10 flex flex-col gap-3">
+        <div className="mt-8 flex flex-col gap-3">
           {poll.payload.options.map((option) => {
             const count = poll.votes[option.id] ?? 0;
             const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
@@ -39,7 +39,7 @@ export function AudiencePoll({ poll, onVote }: Props) {
             return (
               <button
                 className={[
-                  "relative w-full overflow-hidden rounded-2xl border px-6 py-4 text-left transition",
+                  "relative min-h-12 w-full overflow-hidden rounded-2xl border px-5 py-4 text-left transition",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400",
                   voted
                     ? isVoted
@@ -60,8 +60,8 @@ export function AudiencePoll({ poll, onVote }: Props) {
                   />
                 )}
 
-                <span className="relative flex items-center justify-between gap-4">
-                  <span className="text-base font-medium text-slate-800">{option.text}</span>
+                  <span className="relative flex items-center justify-between gap-4">
+                  <span className="text-[15px] font-medium text-slate-800 sm:text-base">{option.text}</span>
                   {showResults && (
                     <span className="shrink-0 text-sm font-semibold text-slate-500">
                       {pct}%

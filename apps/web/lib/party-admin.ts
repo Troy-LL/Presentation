@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { SessionSnapshot } from "@interactive-presentation/types";
+import type { SessionHistoryResponse, SessionSnapshot } from "@interactive-presentation/types";
 
 const snapshotSchema = z.object({
   sessionCode: z.string(),
@@ -61,5 +61,34 @@ export async function getSessionSnapshot(sessionCode: string): Promise<SessionSn
   }
 
   return snapshotSchema.parse(await response.json()) as SessionSnapshot;
+}
+
+export async function getSessionHistory(
+  sessionCode: string,
+  hostToken: string
+): Promise<SessionHistoryResponse> {
+  const response = await fetch(roomUrl(sessionCode), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      action: "get_history",
+      hostToken
+    }),
+    cache: "no-store"
+  });
+
+  if (response.status === 404) {
+    throw new Error("Session not found.");
+  }
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? "Could not fetch session history.");
+  }
+
+  const payload = (await response.json()) as SessionHistoryResponse;
+  return payload;
 }
 

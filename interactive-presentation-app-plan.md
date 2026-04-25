@@ -48,34 +48,132 @@ This list is intentionally extensible — new modes are just new "interaction ty
 
 ---
 
-## 4. Tech Stack
+## 4. Deployment Targets
+
+There are two supported ways to run this app. Both are zero-ops and require no paid hosting beyond an optional Vercel hobby account.
+
+### Option A — Localhost (Fully Local, No Internet Required)
+
+Best for: classrooms, study groups, events on a local network where everyone is on the same Wi-Fi.
+
+```
+                    ┌──────────────────────────────┐
+                    │      Host's laptop/machine    │
+                    │                               │
+                    │  Next.js dev server (:3000)   │
+                    │  + WebSocket server (:3001)   │
+                    │                               │
+                    └──────────────┬───────────────┘
+                                   │ Local Wi-Fi network
+                    ┌──────────────┴───────────────┐
+                    │  Audience phones              │
+                    │  → open 192.168.x.x:3000/join │
+                    └──────────────────────────────┘
+```
+
+**How it works:**
+- Host runs `npm run dev` on their machine
+- Host shares their local IP address as a QR code (the app auto-generates this on startup)
+- Everyone on the same Wi-Fi network opens that address on their phone — no internet needed
+- Session data lives entirely in memory on the host machine; nothing is persisted anywhere
+
+**Setup:**
+```bash
+git clone https://github.com/yourname/interactive-app
+cd interactive-app
+npm install
+npm run dev
+# → App running at http://localhost:3000
+# → QR code for local network printed in terminal
+```
+
+---
+
+### Option B — Vercel Only (Single Platform Deployment)
+
+Best for: recurring use, public events, sharing with people not on the same Wi-Fi.
+
+The key challenge is that **Vercel does not support long-lived WebSocket servers** natively — but we solve this cleanly using **[PartyKit](https://partykit.io)**, which deploys as a Vercel integration and handles the WebSocket layer without any separate hosting platform.
+
+```
+                    ┌──────────────────────────────┐
+                    │         Vercel                │
+                    │                               │
+                    │  Next.js app (Edge/Serverless)│
+                    │  + PartyKit rooms (WebSocket) │
+                    │                               │
+                    └──────────────────────────────┘
+```
+
+**Why PartyKit:**
+- Deploys as a Vercel integration — one `vercel deploy` command, no separate service, no Railway, no Fly.io
+- Each session becomes a "room" (a tiny edge worker) that holds state and handles WebSocket connections
+- Rooms spin up on demand and spin down when the session ends — zero idle cost
+- Free tier: unlimited rooms, up to 1,000 concurrent connections — more than enough for 10–100 users
+
+**Setup:**
+```bash
+npm install partykit partysocket
+
+# Deploy everything to Vercel
+vercel deploy
+# → Next.js frontend on Vercel Edge
+# → PartyKit rooms on Vercel's edge network automatically
+```
+
+**Cost at 40 concurrent users:** $0/month.
+
+---
+
+### Choosing Between A and B
+
+| | Localhost | Vercel + PartyKit |
+|---|---|---|
+| Internet required | No | Yes |
+| Setup time | ~2 minutes | ~10 minutes (first time) |
+| Works across networks | No (same Wi-Fi only) | Yes |
+| Cost | $0 | $0 |
+| Data leaves your machine | No | Yes (PartyKit edge servers) |
+| Persistent sessions | No | Optional |
+| Recommended for | Classrooms, one-off events | Recurring use, remote audiences |
+
+The codebase is **identical for both targets**. A single environment variable switches the WebSocket connection:
+
+```bash
+# .env.local
+NEXT_PUBLIC_MODE=local   # uses local ws server on :3001
+NEXT_PUBLIC_MODE=cloud   # uses PartyKit rooms
+```
+
+---
+
+## 5. Tech Stack
 
 Chosen for simplicity, low cost, and open-source friendliness.
 
 ### Frontend
 - **Framework**: Next.js (React) — handles both the audience app and host dashboard in one repo
 - **Styling**: Tailwind CSS — fast, readable, no CSS files to maintain
-- **Real-time**: Native browser WebSocket or [PartyKit](https://partykit.io) (free tier, purpose-built for this)
+- **Real-time client**: `partysocket` (cloud) or native WebSocket (local) — same API surface
 - **PDF Engine**: `pdfjs-dist` (Mozilla) — for client-side PDF-to-Canvas rendering
 - **Animations**: `framer-motion` — for smooth slide transitions
 
 ### Backend
-- **Runtime**: Node.js with [Hono](https://hono.dev) or plain Express
-- **Real-time layer**: WebSockets via PartyKit, or self-hosted with `ws` library
-- **Database**: SQLite (via PartyKit storage) for session state — lightweight, serverless-friendly
-- **Asset Storage**: Ephemeral room storage for generated slide metadata/images
-- **Session codes**: Short alphanumeric codes (e.g. `XK29A`) generated server-side
+- **HTTP/API**: Next.js API routes (serverless) for session creation
+- **Real-time layer**: PartyKit rooms (cloud) or a local `ws` WebSocket server (localhost mode)
+- **State**: In-memory within each PartyKit room or in-process for localhost — no database needed
+- **Session codes**: Short alphanumeric codes (e.g. `XK29A`) generated at session creation
 
 ### Infrastructure
-- **Hosting**: Vercel (frontend) + Railway or Fly.io (backend WebSocket server) — both have generous free tiers
-- **Total cost at 40 concurrent users**: effectively $0/month on free tiers
+- **Cloud**: Vercel (one platform, one `vercel deploy` — no Railway, no Fly.io)
+- **Local**: `npm run dev` — runs everything on the host's machine, no cloud required
 
 ### Why Not Firebase / Supabase?
 Those work too, but add vendor lock-in. The stack above is fully self-hostable and open-source with zero proprietary dependencies.
 
 ---
 
-## 5. Data Model
+## 6. Data Model
 
 ```ts
 Session {
@@ -104,12 +202,12 @@ Response {
 
 ---
 
-## 6. Real-Time Architecture
+## 7. Real-Time Architecture
 
 ```
 Audience device  ──WebSocket──┐
 Audience device  ──WebSocket──┤
-Audience device  ──WebSocket──┼──► Session server ──► Host dashboard
+Audience device  ──WebSocket──┼──► PartyKit room / local ws server ──► Host dashboard
          ...                  │        │
                                └────────┘
                                (broadcast to all)
@@ -123,32 +221,33 @@ Audience device  ──WebSocket──┼──► Session server ──► Host
 
 ---
 
-## 7. Project Structure
+## 8. Project Structure
 
 ```
 /
 ├── apps/
-│   ├── web/                  # Next.js frontend
+│   ├── web/                      # Next.js frontend
 │   │   ├── app/
-│   │   │   ├── join/         # Audience join page
-│   │   │   ├── lobby/        # Audience lobby + interaction view
-│   │   │   ├── host/         # Host dashboard
-│   │   │   └── api/          # API routes (session creation, etc.)
+│   │   │   ├── join/             # Audience join page
+│   │   │   ├── lobby/            # Audience lobby + interaction view
+│   │   │   ├── host/             # Host dashboard
+│   │   │   └── api/              # API routes (session creation, etc.)
 │   │   └── components/
-│   │       ├── interactions/ # One component per interaction type
-│   │       ├── presentation/ # SlideStage, PdfRenderer, SlideControls
-│   │       └── host/         # Host control panel components
-│   └── server/               # WebSocket server (PartyKit or plain ws)
-│       ├── session.ts        # Session state machine
-│       └── interactions/     # Server-side logic per interaction type
+│   │       ├── interactions/     # One component per interaction type
+│   │       ├── presentation/     # SlideStage, PdfRenderer, SlideControls
+│   │       └── host/             # Host control panel components
+│   └── party/                    # PartyKit server (replaces separate backend)
+│       ├── session.ts            # Session state machine (room logic)
+│       └── interactions/         # Server-side logic per interaction type
 ├── packages/
-│   └── types/                # Shared TypeScript types (Session, Interaction, etc.)
+│   └── types/                    # Shared TypeScript types (Session, Interaction, etc.)
+├── .env.example                  # NEXT_PUBLIC_MODE=local | cloud
 └── README.md
 ```
 
 ---
 
-## 8. Build Phases
+## 9. Build Phases
 
 ### Phase 1 — Core Loop (Week 1–2)
 - [x] Session creation with invite code + QR code generation
@@ -156,6 +255,7 @@ Audience device  ──WebSocket──┼──► Session server ──► Host
 - [x] Blank lobby screen
 - [x] WebSocket connection (host ↔ audience)
 - [x] First working mode: **Crowd Prompt** (host types text → audience sees it full screen)
+- [x] Localhost mode working end-to-end (LAN QR code printed in terminal on `npm run dev`)
 
 ### Phase 2 — Polling (Week 3)
 - [x] Host can create a poll with 2–10 options
@@ -171,53 +271,76 @@ Audience device  ──WebSocket──┼──► Session server ──► Host
 
 ### Phase 4 — Slide Deck Engine (PDF-to-Canvas)
 - [x] **Technical Foundation**: Integrate `pdfjs-dist` and build the 16:9 **Presentation Stage**
-- [x] **Layered Rendering**: Setup the three-layer stack (Slide Image -> Interaction Overlay -> Controls)
+- [x] **Layered Rendering**: Setup the three-layer stack (Slide Image → Interaction Overlay → Controls)
 - [x] **Slide Sync**: Implement `{ type: "SET_SLIDE", index: X }` WebSocket event to sync whole room
-- [x] **Interactivity**: 
+- [x] **Interactivity**:
   - [x] Keyboard listeners (Arrow keys/Clicker support for Host)
   - [x] Slide Navigator (Filmstrip of thumbnails for quick jumping)
   - [x] Contextual Interaction (Auto-launch specific polls when hitting certain slides)
 - [x] **Automatic Clean-up**: Ensure all binary slide assets and metadata are wiped when host ends session
 
 ### Phase 5 — Polish (Week 6)
-- [ ] Mobile-first responsive design (audience screens are phones)
-- [x] Reconnection handling (participant drops WiFi → reconnects seamlessly)
-- [ ] Session history (host can review past interactions)
+- [x] Mobile-first responsive design (audience screens are phones)
+- [x] Reconnection handling (participant drops Wi-Fi → reconnects seamlessly)
+- [x] Session history (host can review past interactions)
 - [x] Premade Presets (host can save commonly used prompts for one-tap launch)
-- [ ] Attention nudge mode (host can trigger a short "Look at your device now" banner/sound/vibration cue before a prompt or poll)
-- [ ] Basic host analytics (response rates, most popular option, etc.)
-- [ ] Browser Fullscreen API integration for Host Dashboard
+- [x] Attention nudge mode (host triggers a "Look at your device now" banner/sound/vibration cue)
+- [x] Basic host analytics (response rates, most popular option, etc.)
+- [x] Browser Fullscreen API integration for Host Dashboard
 
 ### Phase 6 — Open Source Release
-- [ ] Clean README with self-hosting instructions
-- [ ] One-click deploy buttons (Vercel + Railway)
-- [ ] Docker Compose file for fully local hosting
+- [ ] Release docs pass
+  - [ ] Clean README with architecture overview and project purpose
+  - [ ] Document both deployment targets: localhost mode and cloud mode
+  - [ ] Add environment variable reference for `NEXT_PUBLIC_MODE`, PartyKit, and app URL settings
+  - [ ] Add troubleshooting notes for common startup and connection issues
+- [ ] One-click Vercel deployment
+  - [ ] Add deployment instructions/button path for the frontend
+  - [ ] Verify PartyKit cloud room setup is documented for Vercel users
+  - [ ] Confirm the docs clearly state that no Railway or Fly.io setup is required
+- [ ] Localhost quickstart
+  - [ ] Document `npm run dev` as the local startup command
+  - [ ] Explain how to share the host machine's LAN IP and QR code to audience phones
+  - [ ] Note the expected local ports and how to handle port conflicts
+- [ ] Docker Compose self-hosting
+  - [ ] Add a Compose file for running the app locally on a server
+  - [ ] Include service wiring, ports, and env vars in the docs
+  - [ ] Verify the compose flow matches the documented startup steps
 - [ ] Contributing guide
+  - [ ] Add branch/PR workflow guidance
+  - [ ] Add code style and testing expectations
+  - [ ] Add a minimal issue/PR checklist for contributors
+
+### Phase 6 — Release Done Criteria
+- [ ] A fresh clone can be started locally using the README alone
+- [ ] Cloud deployment instructions work without external platform ambiguity
+- [ ] Docker Compose starts the full stack without undocumented manual steps
+- [ ] Contributing guide is present and matches the repo workflow
 
 ---
 
-## 9. Scalability Notes
+## 10. Scalability Notes
 
-At 10–40 concurrent users per session, this stack is massively over-provisioned — WebSockets handle thousands of concurrent connections on a single $5/month server. Things to keep in mind as you grow:
+At 10–40 concurrent users per session, this stack is massively over-provisioned. Things to keep in mind as you grow:
 
 - **Send aggregates, not raw votes.** When 30 people vote simultaneously, don't broadcast 30 individual events. Debounce on the server and send `{ optionA: 12, optionB: 18 }` once per 200ms.
 - **Participant IDs are anonymous.** Generate a UUID on join and store it in `sessionStorage` — no login, no tracking, no GDPR headache.
-- **Sessions are ephemeral.** Don't persist session data longer than needed. SQLite row + WebSocket room gets garbage collected when the session closes.
-- **One server per session room** is fine until ~500 concurrent users. Beyond that, look at PartyKit's edge deployment or a Redis pub/sub layer — but you won't need this for a while.
+- **Sessions are ephemeral.** Don't persist session data longer than needed. PartyKit room state gets garbage collected when the session closes.
+- **PartyKit scales automatically.** Up to ~1,000 concurrent connections on the free tier — still a single platform, no extra infra. Beyond that, PartyKit Pro handles it.
 
 ---
 
-## 10. Open Source Principles
+## 11. Open Source Principles
 
 - **MIT License** — anyone can fork, self-host, or build on top
 - **Zero vendor lock-in** — every dependency has a self-hosted alternative
 - **No tracking, no analytics by default** — opt-in only
 - **Environment variables only** — no secrets in code
-- **Keep it boring** — Node.js, TypeScript, SQLite. No exotic tech that future contributors have to learn
+- **Keep it boring** — Node.js, TypeScript, no database. No exotic tech that future contributors have to learn
 
 ---
 
-## 11. Nice-to-Haves (Post-MVP)
+## 12. Nice-to-Haves (Post-MVP)
 
 - Prompt transition alert (automatically notify audience when host switches to a new prompt/interaction)
 - Word cloud from open text responses

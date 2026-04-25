@@ -36,6 +36,7 @@ export function useSessionConnection({
   );
   const [error, setError] = useState<string | null>(null);
   const [latestReactionEmoji, setLatestReactionEmoji] = useState<string | null>(null);
+  const [latestAttentionNudge, setLatestAttentionNudge] = useState<{ message: string; sentAt: string } | null>(null);
   const socketRef = useRef<PartySocket | null>(null);
   const snapshotRef = useRef<SessionSnapshot | null>(initialSnapshot);
   const prevInteractionRef = useRef<SessionSnapshot["currentInteraction"]>(null);
@@ -171,6 +172,9 @@ export function useSessionConnection({
             };
           });
           break;
+        case "server.attention_nudge":
+          setLatestAttentionNudge({ message: message.message, sentAt: message.sentAt });
+          break;
         case "server.quiz_votes_updated":
           setSnapshot((current) => {
             if (!current || current.currentInteraction?.type !== "quiz") return current;
@@ -295,6 +299,15 @@ export function useSessionConnection({
         };
         socketRef.current.send(JSON.stringify(message));
       },
+      sendAttentionNudge(text?: string) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = {
+          type: "client.send_attention_nudge",
+          hostToken,
+          message: text?.trim() || undefined
+        };
+        socketRef.current.send(JSON.stringify(message));
+      },
       submitVote(optionId: string) {
         if (!socketRef.current) return;
         const message: ClientMessage = { type: "client.submit_vote", optionId };
@@ -363,6 +376,7 @@ export function useSessionConnection({
     connectionState,
     error,
     latestReactionEmoji,
+    latestAttentionNudge,
     ...actions
   };
 }

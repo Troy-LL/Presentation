@@ -106,7 +106,7 @@ export function AudienceSlideStage({ interaction }: Props) {
           {/* Layer 3: Controls/status */}
           <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 sm:p-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="rounded-full bg-black/45 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/90 sm:text-xs">
+              <p className="min-w-0 max-w-[72%] truncate rounded-full bg-black/45 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/90 sm:text-xs">
                 {interaction.payload.title ?? "Presentation"}
               </p>
               <p className="rounded-full bg-black/45 px-3 py-1 text-xs font-medium text-white/90">
