@@ -23,7 +23,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
 
   const playNudgeSound = () => {
     try {
-      const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextClass) return;
       
       const ctx = new AudioContextClass();
@@ -42,7 +42,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
       
       osc.start();
       osc.stop(ctx.currentTime + 0.4);
-    } catch (e) {
+    } catch {
       // Silent fail if audio is blocked
     }
   };
