@@ -27,7 +27,7 @@ export function JoinForm({ initialCode }: { initialCode: string }) {
         <input
           id="invite-code"
           autoComplete="off"
-          className="h-14 flex-1 rounded-full border border-black/10 bg-white px-6 text-lg uppercase tracking-[0.35em] outline-none ring-0 placeholder:text-slate-300 focus:border-black"
+          className="h-14 flex-1 rounded-full border border-black/10 bg-white px-5 text-base uppercase tracking-[0.24em] outline-none ring-0 placeholder:text-slate-300 focus:border-black sm:px-6 sm:text-lg sm:tracking-[0.35em]"
           maxLength={5}
           onChange={(event) => setCode(event.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase())}
           placeholder="XK29A"

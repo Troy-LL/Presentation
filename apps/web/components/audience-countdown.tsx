@@ -30,13 +30,13 @@ export function AudienceCountdown({ interaction }: Props) {
   }, [interaction.payload.endsAt, now]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-6 text-center">
+    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 text-center sm:px-6">
       <div className="w-full max-w-xl">
         <p className="text-sm uppercase tracking-[0.28em] text-slate-300">Countdown</p>
-        <h1 className="mt-6 text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl md:text-4xl">
           {interaction.payload.label}
         </h1>
-        <p className="mt-8 text-7xl font-semibold tracking-tight text-slate-950 md:text-8xl">
+        <p className="mt-6 text-6xl font-semibold tracking-tight text-slate-950 sm:text-7xl md:mt-8 md:text-8xl">
           {formatRemaining(remainingSeconds)}
         </p>
         <p className="mt-4 text-sm text-slate-500">

@@ -18,6 +18,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
   const [initialSnapshot, setInitialSnapshot] = useState<SessionSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [nudgeMessage, setNudgeMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setParticipantId(getOrCreateParticipantId(sessionCode));
@@ -67,6 +68,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     snapshot,
     connectionState,
     error,
+    latestAttentionNudge,
     submitVote,
     submitQuizAnswer,
     sendReaction,
@@ -79,123 +81,180 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     enabled: Boolean(participantId && initialSnapshot)
   });
 
+  useEffect(() => {
+    if (!latestAttentionNudge) return;
+
+    setNudgeMessage(latestAttentionNudge.message);
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate?.([120, 80, 120]);
+    }
+
+    const timer = window.setTimeout(() => setNudgeMessage(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [latestAttentionNudge]);
+
+  const nudgeBanner = nudgeMessage ? (
+    <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+      <div className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-lg">
+        {nudgeMessage}
+      </div>
+    </div>
+  ) : null;
+
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-6">
-        <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Joining session…</p>
-      </main>
+      <>
+        {nudgeBanner}
+        <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
+          <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Joining session…</p>
+        </main>
+      </>
     );
   }
 
   if (loadError || !snapshot) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-6">
-        <div className="max-w-md text-center">
-          <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Session unavailable</p>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
-            That room isn&apos;t active.
-          </h1>
-          <p className="mt-4 text-base leading-7 text-slate-600">
-            {loadError ?? "Try entering the code again from the join screen."}
-          </p>
-          <a
-            className="mt-8 inline-flex rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-900"
-            href="/join"
-          >
-            Back to join
-          </a>
-        </div>
-      </main>
+      <>
+        {nudgeBanner}
+        <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
+          <div className="max-w-md text-center">
+            <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Session unavailable</p>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
+              That room isn&apos;t active.
+            </h1>
+            <p className="mt-4 text-base leading-7 text-slate-600">
+              {loadError ?? "Try entering the code again from the join screen."}
+            </p>
+            <a
+              className="mt-8 inline-flex rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-900"
+              href="/join"
+            >
+              Back to join
+            </a>
+          </div>
+        </main>
+      </>
     );
   }
 
   if (snapshot.status === "closed") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-6">
-        <div className="max-w-md text-center">
-          <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Session Closed</p>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
-            Thanks for participating!
-          </h1>
-          <p className="mt-4 text-base leading-7 text-slate-600">
-            This presentation room has been automatically closed due to inactivity, or the host has permanently ended it.
-          </p>
-        </div>
-      </main>
+      <>
+        {nudgeBanner}
+        <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
+          <div className="max-w-md text-center">
+            <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Session Closed</p>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
+              Thanks for participating!
+            </h1>
+            <p className="mt-4 text-base leading-7 text-slate-600">
+              This presentation room has been automatically closed due to inactivity, or the host has permanently ended it.
+            </p>
+          </div>
+        </main>
+      </>
     );
   }
 
   if (snapshot.currentInteraction?.type === "poll") {
     return (
-      <AudiencePoll
-        onVote={submitVote}
-        poll={snapshot.currentInteraction}
-      />
+      <>
+        {nudgeBanner}
+        <AudiencePoll
+          onVote={submitVote}
+          poll={snapshot.currentInteraction}
+        />
+      </>
     );
   }
 
   if (snapshot.currentInteraction?.type === "prompt") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-8 text-center">
-        <div className="max-w-5xl">
-          <p className="text-sm uppercase tracking-[0.28em] text-slate-300">Live prompt</p>
-          <h1 className="mt-8 text-5xl font-semibold tracking-tight text-slate-950 md:text-7xl">
-            {snapshot.currentInteraction.payload.text}
-          </h1>
-          {error ? <p className="mt-6 text-sm text-red-600">{error}</p> : null}
-        </div>
-      </main>
+      <>
+        {nudgeBanner}
+        <main className="flex min-h-screen items-center justify-center bg-white px-8 text-center">
+          <div className="max-w-5xl">
+            <p className="text-sm uppercase tracking-[0.28em] text-slate-300">Live prompt</p>
+            <h1 className="mt-8 text-5xl font-semibold tracking-tight text-slate-950 md:text-7xl">
+              {snapshot.currentInteraction.payload.text}
+            </h1>
+            {error ? <p className="mt-6 text-sm text-red-600">{error}</p> : null}
+          </div>
+        </main>
+      </>
     );
   }
 
   if (snapshot.currentInteraction?.type === "quiz") {
     return (
-      <AudienceQuiz
-        onSubmitAnswer={submitQuizAnswer}
-        quiz={snapshot.currentInteraction}
-      />
+      <>
+        {nudgeBanner}
+        <AudienceQuiz
+          onSubmitAnswer={submitQuizAnswer}
+          quiz={snapshot.currentInteraction}
+        />
+      </>
     );
   }
 
   if (snapshot.currentInteraction?.type === "reactions") {
     return (
-      <AudienceReactions
-        onSendReaction={sendReaction}
-        reactions={snapshot.currentInteraction}
-      />
+      <>
+        {nudgeBanner}
+        <AudienceReactions
+          onSendReaction={sendReaction}
+          reactions={snapshot.currentInteraction}
+        />
+      </>
     );
   }
 
   if (snapshot.currentInteraction?.type === "open_text") {
     return (
-      <AudienceOpenText
-        interaction={snapshot.currentInteraction}
-        onSubmit={submitTextResponse}
-      />
+      <>
+        {nudgeBanner}
+        <AudienceOpenText
+          interaction={snapshot.currentInteraction}
+          onSubmit={submitTextResponse}
+        />
+      </>
     );
   }
 
   if (snapshot.currentInteraction?.type === "countdown") {
-    return <AudienceCountdown interaction={snapshot.currentInteraction} />;
+    return (
+      <>
+        {nudgeBanner}
+        <AudienceCountdown interaction={snapshot.currentInteraction} />
+      </>
+    );
   }
 
   if (snapshot.currentInteraction?.type === "slides") {
-    return <AudienceSlideStage interaction={snapshot.currentInteraction} />;
+    return (
+      <>
+        {nudgeBanner}
+        <AudienceSlideStage interaction={snapshot.currentInteraction} />
+      </>
+    );
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-white px-6 text-center">
-      {connectionState === "disconnected" && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-500 shadow-sm">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
-          Reconnecting…
+    <>
+      {nudgeBanner}
+      <main className="relative flex min-h-screen items-center justify-center bg-white px-4 py-6 text-center sm:px-6">
+        {connectionState === "disconnected" && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-500 shadow-sm">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+            Reconnecting…
+          </div>
+        )}
+        <div className="max-w-md">
+          <p className="text-sm uppercase tracking-[0.3em] text-slate-300">Session {sessionCode}</p>
+          <div className="mt-8 h-24 rounded-full border border-slate-100 bg-slate-50/50" />
+          {error ? <p className="mt-6 text-sm text-red-600">{error}</p> : null}
         </div>
-      )}
-      <div className="max-w-md">
-        <p className="text-sm uppercase tracking-[0.3em] text-slate-300">Session {sessionCode}</p>
-        <div className="mt-8 h-24 rounded-full border border-slate-100 bg-slate-50/50" />
-        {error ? <p className="mt-6 text-sm text-red-600">{error}</p> : null}
-      </div>
-    </main>
+      </main>
+    </>
   );
 }

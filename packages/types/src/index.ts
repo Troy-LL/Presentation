@@ -153,6 +153,22 @@ export type SessionResponse = {
   qrValue: string;
 };
 
+export type SessionHistoryEntry = {
+  id: string;
+  interactionType: Exclude<InteractionType, "slides"> | "slides";
+  title: string;
+  startedAt: string;
+  endedAt: string;
+  responses: number;
+  participantCountAtClose: number;
+  topSignal: string | null;
+};
+
+export type SessionHistoryResponse = {
+  sessionCode: string;
+  history: SessionHistoryEntry[];
+};
+
 // ─── Client → Server ─────────────────────────────────────────────────────────
 
 export type ClientMessage =
@@ -206,6 +222,11 @@ export type ClientMessage =
       title: string | null;
       sourceUrl: string;
       totalSlides: number;
+    }
+  | {
+      type: "client.send_attention_nudge";
+      hostToken: string;
+      message?: string;
     }
   | {
       type: "client.submit_vote";
@@ -292,6 +313,11 @@ export type ServerMessage =
   | {
       type: "server.slide_set";
       index: number;
+    }
+  | {
+      type: "server.attention_nudge";
+      message: string;
+      sentAt: string;
     }
   | {
       type: "server.poll_results_revealed";

@@ -8,6 +8,7 @@ import type {
   PollInteraction,
   PromptInteraction,
   ReactionsInteraction,
+  SessionHistoryEntry,
   SlideDeckInteraction,
   QuizInteraction,
   ServerMessage,
@@ -31,6 +32,7 @@ type RoomState = {
     | null;
   participants: Map<string, string>;
   hosts: Set<string>;
+  history: SessionHistoryEntry[];
   // Rate limiting: participantId → interaction ID they last responded to
   lastResponseByParticipant: Map<string, string>;
   reactionTimestamps: Map<string, number[]>;
@@ -45,6 +47,7 @@ function createEmptyState(sessionCode: string): RoomState {
     currentInteraction: null,
     participants: new Map(),
     hosts: new Set(),
+    history: [],
     lastResponseByParticipant: new Map(),
     reactionTimestamps: new Map()
   };
@@ -68,6 +71,7 @@ export default class SessionServer implements Party.Server {
   private state: RoomState;
   private static readonly MAX_OPEN_TEXT_LENGTH = 280;
   private static readonly MAX_OPEN_TEXT_RESPONSES = 200;
+  private static readonly MAX_HISTORY_ENTRIES = 120;
 
   constructor(readonly room: Party.Room) {
     this.state = createEmptyState(this.room.id);
@@ -76,6 +80,7 @@ export default class SessionServer implements Party.Server {
   async onStart() {
     const status = await this.room.storage.get<SessionStatus>("status");
     const hostToken = await this.room.storage.get<string>("hostToken");
+    const history = await this.room.storage.get<SessionHistoryEntry[]>("history");
 
     if (status) {
       this.state.status = status;
@@ -83,6 +88,144 @@ export default class SessionServer implements Party.Server {
     if (hostToken) {
       this.state.hostToken = hostToken;
     }
+    if (history) {
+      this.state.history = history;
+    }
+  }
+
+  private buildHistoryEntry(
+    interaction:
+      | PromptInteraction
+      | PollInteraction
+      | QuizInteraction
+      | ReactionsInteraction
+      | OpenTextInteraction
+      | CountdownInteraction
+      | SlideDeckInteraction,
+    endedAt: string
+  ): SessionHistoryEntry {
+    if (interaction.type === "poll") {
+      const totalVotes = Object.values(interaction.votes).reduce((acc, count) => acc + count, 0);
+      const leader = interaction.payload.options.reduce<{ text: string; count: number } | null>((best, option) => {
+        const count = interaction.votes[option.id] ?? 0;
+        if (!best || count > best.count) return { text: option.text, count };
+        return best;
+      }, null);
+
+      return {
+        id: crypto.randomUUID(),
+        interactionType: interaction.type,
+        title: interaction.payload.question,
+        startedAt: interaction.startedAt,
+        endedAt,
+        responses: totalVotes,
+        participantCountAtClose: this.state.participants.size,
+        topSignal: leader && leader.count > 0 ? leader.text : null
+      };
+    }
+
+    if (interaction.type === "quiz") {
+      const totalAnswers = Object.values(interaction.votes).reduce((acc, count) => acc + count, 0);
+      const leader = interaction.payload.options.reduce<{ text: string; count: number } | null>((best, option) => {
+        const count = interaction.votes[option.id] ?? 0;
+        if (!best || count > best.count) return { text: option.text, count };
+        return best;
+      }, null);
+
+      return {
+        id: crypto.randomUUID(),
+        interactionType: interaction.type,
+        title: interaction.payload.question,
+        startedAt: interaction.startedAt,
+        endedAt,
+        responses: totalAnswers,
+        participantCountAtClose: this.state.participants.size,
+        topSignal: leader && leader.count > 0 ? leader.text : null
+      };
+    }
+
+    if (interaction.type === "reactions") {
+      const totalReactions = Object.values(interaction.reactionCounts).reduce((acc, count) => acc + count, 0);
+      const topEmoji = Object.entries(interaction.reactionCounts).reduce<{ emoji: string; count: number } | null>(
+        (best, [emoji, count]) => {
+          if (!best || count > best.count) return { emoji, count };
+          return best;
+        },
+        null
+      );
+
+      return {
+        id: crypto.randomUUID(),
+        interactionType: interaction.type,
+        title: interaction.payload.prompt,
+        startedAt: interaction.startedAt,
+        endedAt,
+        responses: totalReactions,
+        participantCountAtClose: this.state.participants.size,
+        topSignal: topEmoji && topEmoji.count > 0 ? topEmoji.emoji : null
+      };
+    }
+
+    if (interaction.type === "open_text") {
+      return {
+        id: crypto.randomUUID(),
+        interactionType: interaction.type,
+        title: interaction.payload.prompt,
+        startedAt: interaction.startedAt,
+        endedAt,
+        responses: interaction.responseCount,
+        participantCountAtClose: this.state.participants.size,
+        topSignal: interaction.responses[0]?.text ?? null
+      };
+    }
+
+    if (interaction.type === "countdown") {
+      return {
+        id: crypto.randomUUID(),
+        interactionType: interaction.type,
+        title: interaction.payload.label,
+        startedAt: interaction.startedAt,
+        endedAt,
+        responses: 0,
+        participantCountAtClose: this.state.participants.size,
+        topSignal: `${interaction.payload.durationSeconds}s`
+      };
+    }
+
+    if (interaction.type === "slides") {
+      return {
+        id: crypto.randomUUID(),
+        interactionType: interaction.type,
+        title: interaction.payload.title ?? "Presentation",
+        startedAt: interaction.startedAt,
+        endedAt,
+        responses: interaction.payload.currentSlideIndex + 1,
+        participantCountAtClose: this.state.participants.size,
+        topSignal: `Slide ${interaction.payload.currentSlideIndex + 1}/${interaction.payload.totalSlides}`
+      };
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      interactionType: interaction.type,
+      title: "Interaction",
+      startedAt: interaction.startedAt,
+      endedAt,
+      responses: 0,
+      participantCountAtClose: this.state.participants.size,
+      topSignal: null
+    };
+  }
+
+  private async archiveCurrentInteraction() {
+    const current = this.state.currentInteraction;
+    if (!current) return;
+
+    const endedAt = new Date().toISOString();
+    current.closedAt = endedAt;
+    const entry = this.buildHistoryEntry(current, endedAt);
+    this.state.history = [entry, ...this.state.history].slice(0, SessionServer.MAX_HISTORY_ENTRIES);
+    await this.room.storage.put("history", this.state.history);
   }
 
   private bumpAlarm() {
@@ -175,6 +318,8 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
+        await this.archiveCurrentInteraction();
+
         this.state.currentInteraction = {
           id: crypto.randomUUID(),
           type: "prompt",
@@ -205,6 +350,8 @@ export default class SessionServer implements Party.Server {
           sender.send(serialize({ type: "server.error", message: "Poll launch rejected." }));
           return;
         }
+
+        await this.archiveCurrentInteraction();
 
         const votes: Record<string, number> = {};
         for (const opt of options) {
@@ -249,6 +396,8 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
+        await this.archiveCurrentInteraction();
+
         const votes: Record<string, number> = {};
         for (const opt of options) {
           votes[opt.id] = 0;
@@ -282,6 +431,8 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
+        await this.archiveCurrentInteraction();
+
         const reactionCounts: Record<string, number> = {};
         for (const emoji of emojis) {
           reactionCounts[emoji] = 0;
@@ -311,6 +462,8 @@ export default class SessionServer implements Party.Server {
           sender.send(serialize({ type: "server.error", message: "Open text launch rejected." }));
           return;
         }
+
+        await this.archiveCurrentInteraction();
 
         this.state.currentInteraction = {
           id: crypto.randomUUID(),
@@ -344,6 +497,8 @@ export default class SessionServer implements Party.Server {
           sender.send(serialize({ type: "server.error", message: "Countdown launch rejected." }));
           return;
         }
+
+        await this.archiveCurrentInteraction();
 
         const startedAt = new Date();
         const endsAt = new Date(startedAt.getTime() + durationSeconds * 1000).toISOString();
@@ -388,6 +543,8 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
+        await this.archiveCurrentInteraction();
+
         this.state.currentInteraction = {
           id: crypto.randomUUID(),
           type: "slides",
@@ -406,6 +563,21 @@ export default class SessionServer implements Party.Server {
         this.broadcast({
           type: "server.interaction_started",
           interaction: this.state.currentInteraction
+        });
+        return;
+      }
+
+      case "client.send_attention_nudge": {
+        if (!this.canControlRoom(sender.id, message.hostToken)) {
+          sender.send(serialize({ type: "server.error", message: "Attention nudge rejected." }));
+          return;
+        }
+
+        const cleanedMessage = message.message?.trim() || "Look at your device now";
+        this.broadcast({
+          type: "server.attention_nudge",
+          message: cleanedMessage.slice(0, 80),
+          sentAt: new Date().toISOString()
         });
         return;
       }
@@ -558,6 +730,8 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
+        await this.archiveCurrentInteraction();
+
         this.state.currentInteraction = null;
         this.state.status = "lobby";
         await this.room.storage.put("status", "lobby");
@@ -574,6 +748,8 @@ export default class SessionServer implements Party.Server {
           sender.send(serialize({ type: "server.error", message: "Close session rejected." }));
           return;
         }
+
+        await this.archiveCurrentInteraction();
 
         this.state.status = "closed";
         this.broadcast({
@@ -597,29 +773,48 @@ export default class SessionServer implements Party.Server {
     }
 
     if (request.method === "POST") {
-      const payload = (await request.json()) as { action?: string; hostToken?: string };
-
-      if (payload.action !== "initialize_session" || !payload.hostToken) {
-        console.warn(`[POST] Invalid initialize_session payload for room ${this.room.id}.`);
-        return Response.json({ error: "Invalid session initialization request." }, { status: 400 });
-      }
-
-      if (this.state.hostToken) {
-        console.warn(`[POST] Session already exists for room ${this.room.id}.`);
-        return Response.json({ error: "Session already exists." }, { status: 409 });
-      }
-
-      this.state = {
-        ...createEmptyState(this.room.id),
-        hostToken: payload.hostToken
+      const payload = (await request.json()) as {
+        action?: string;
+        hostToken?: string;
       };
-      
-      await Promise.all([
-        this.room.storage.put("hostToken", payload.hostToken),
-        this.room.storage.put("status", "lobby")
-      ]);
 
-      return Response.json(snapshotFromState(this.state), { status: 201 });
+      if (payload.action === "initialize_session") {
+        if (!payload.hostToken) {
+          console.warn(`[POST] Invalid initialize_session payload for room ${this.room.id}.`);
+          return Response.json({ error: "Invalid session initialization request." }, { status: 400 });
+        }
+
+        if (this.state.hostToken) {
+          console.warn(`[POST] Session already exists for room ${this.room.id}.`);
+          return Response.json({ error: "Session already exists." }, { status: 409 });
+        }
+
+        this.state = {
+          ...createEmptyState(this.room.id),
+          hostToken: payload.hostToken
+        };
+
+        await Promise.all([
+          this.room.storage.put("hostToken", payload.hostToken),
+          this.room.storage.put("status", "lobby"),
+          this.room.storage.put("history", this.state.history)
+        ]);
+
+        return Response.json(snapshotFromState(this.state), { status: 201 });
+      }
+
+      if (payload.action === "get_history") {
+        if (!payload.hostToken || !this.isValidHost(payload.hostToken)) {
+          return Response.json({ error: "Unauthorized history request." }, { status: 403 });
+        }
+
+        return Response.json({
+          sessionCode: this.room.id,
+          history: this.state.history
+        });
+      }
+
+      return Response.json({ error: "Invalid session action." }, { status: 400 });
     }
 
     return Response.json({ error: "Method not allowed." }, { status: 405 });
