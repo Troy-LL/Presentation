@@ -37,7 +37,6 @@ export function useSessionConnection({
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<PartySocket | null>(null);
   const prevInteractionRef = useRef<SessionSnapshot["currentInteraction"]>(null);
-  const [sessionEnded, setSessionEnded] = useState(false);
 
   useEffect(() => {
     setSnapshot(initialSnapshot);
@@ -124,9 +123,6 @@ export function useSessionConnection({
           });
           break;
         case "server.interaction_cleared":
-          if (prevInteractionRef.current !== null) {
-            setSessionEnded(true);
-          }
           prevInteractionRef.current = null;
           setSnapshot((current) =>
             current
@@ -197,7 +193,6 @@ export function useSessionConnection({
   return {
     snapshot,
     connectionState,
-    sessionEnded,
     error,
     ...actions
   };

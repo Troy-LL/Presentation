@@ -58,7 +58,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     };
   }, [sessionCode]);
 
-  const { snapshot, connectionState, sessionEnded, error, submitVote } = useSessionConnection({
+  const { snapshot, connectionState, error, submitVote } = useSessionConnection({
     sessionCode,
     role: "audience",
     participantId,
@@ -106,22 +106,6 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
           </h1>
           <p className="mt-4 text-base leading-7 text-slate-600">
             This presentation room has been automatically closed due to inactivity, or the host has permanently ended it.
-          </p>
-        </div>
-      </main>
-    );
-  }
-
-  if (sessionEnded) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-6">
-        <div className="max-w-md text-center">
-          <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Session</p>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
-            Thanks for joining!
-          </h1>
-          <p className="mt-4 text-base leading-7 text-slate-600">
-            The host has ended this interaction. Stay tuned for what&apos;s next.
           </p>
         </div>
       </main>

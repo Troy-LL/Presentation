@@ -42,6 +42,7 @@ A real-time audience interaction tool where:
 | **Open text** | Opens a text prompt | Text input field → responses appear on host screen |
 | **Emoji reactions** | Enables reaction mode | Emoji buttons → shower of reactions on host screen |
 | **Countdown** | Sets a timer | Big countdown clock fills the screen |
+| **Slide display** | Uploads a PDF presentation and clicks through slides | Native view of the current slide (16:9) + Synced transitions |
 
 This list is intentionally extensible — new modes are just new "interaction types" in the data model.
 
@@ -55,11 +56,14 @@ Chosen for simplicity, low cost, and open-source friendliness.
 - **Framework**: Next.js (React) — handles both the audience app and host dashboard in one repo
 - **Styling**: Tailwind CSS — fast, readable, no CSS files to maintain
 - **Real-time**: Native browser WebSocket or [PartyKit](https://partykit.io) (free tier, purpose-built for this)
+- **PDF Engine**: `pdfjs-dist` (Mozilla) — for client-side PDF-to-Canvas rendering
+- **Animations**: `framer-motion` — for smooth slide transitions
 
 ### Backend
 - **Runtime**: Node.js with [Hono](https://hono.dev) or plain Express
 - **Real-time layer**: WebSockets via PartyKit, or self-hosted with `ws` library
-- **Database**: SQLite (via Turso or local file) for session state — lightweight, serverless-friendly
+- **Database**: SQLite (via PartyKit storage) for session state — lightweight, serverless-friendly
+- **Asset Storage**: Ephemeral room storage for generated slide metadata/images
 - **Session codes**: Short alphanumeric codes (e.g. `XK29A`) generated server-side
 
 ### Infrastructure
@@ -132,6 +136,7 @@ Audience device  ──WebSocket──┼──► Session server ──► Host
 │   │   │   └── api/          # API routes (session creation, etc.)
 │   │   └── components/
 │   │       ├── interactions/ # One component per interaction type
+│   │       ├── presentation/ # SlideStage, PdfRenderer, SlideControls
 │   │       └── host/         # Host control panel components
 │   └── server/               # WebSocket server (PartyKit or plain ws)
 │       ├── session.ts        # Session state machine
@@ -164,14 +169,25 @@ Audience device  ──WebSocket──┼──► Session server ──► Host
 - [ ] Open text submission (host sees responses stream in)
 - [ ] Countdown timer
 
-### Phase 4 — Polish (Week 6)
+### Phase 4 — Slide Deck Engine (PDF-to-Canvas)
+- [ ] **Technical Foundation**: Integrate `pdfjs-dist` and build the 16:9 **Presentation Stage**
+- [ ] **Layered Rendering**: Setup the three-layer stack (Slide Image -> Interaction Overlay -> Controls)
+- [ ] **Slide Sync**: Implement `{ type: "SET_SLIDE", index: X }` WebSocket event to sync whole room
+- [ ] **Interactivity**: 
+    - [ ] Keyboard listeners (Arrow keys/Clicker support for Host)
+    - [ ] Slide Navigator (Filmstrip of thumbnails for quick jumping)
+    - [ ] Contextual Interaction (Auto-launch specific polls when hitting certain slides)
+- [ ] **Automatic Clean-up**: Ensure all binary slide assets and metadata are wiped when host ends session
+
+### Phase 5 — Polish (Week 6)
 - [ ] Mobile-first responsive design (audience screens are phones)
 - [ ] Reconnection handling (participant drops WiFi → reconnects seamlessly)
 - [ ] Session history (host can review past interactions)
 - [x] Premade Presets (host can save commonly used prompts for one-tap launch)
 - [ ] Basic host analytics (response rates, most popular option, etc.)
+- [ ] Browser Fullscreen API integration for Host Dashboard
 
-### Phase 5 — Open Source Release
+### Phase 6 — Open Source Release
 - [ ] Clean README with self-hosting instructions
 - [ ] One-click deploy buttons (Vercel + Railway)
 - [ ] Docker Compose file for fully local hosting

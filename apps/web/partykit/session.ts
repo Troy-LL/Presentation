@@ -76,20 +76,19 @@ export default class SessionServer implements Party.Server {
   }
 
   async onAlarm() {
-    // Check if any clients are still connected (Host or Audience)
-    const connections = Array.from(this.room.getConnections());
-    if (connections.length > 0) {
-      // Activity detected via active connection. Reschedule shutdown.
+    // If hosts are still connected, skip self-destruct and reset the normal inactivity timer
+    if (this.state.hosts.size > 0) {
       this.bumpAlarm();
       return;
     }
 
+    // No host connected or session was inactive: close it down and wipe storage to save DB space
     this.state.status = "closed";
-    await this.room.storage.put("status", "closed");
     this.broadcast({
       type: "server.session_snapshot",
       snapshot: snapshotFromState(this.state)
     });
+    await this.room.storage.deleteAll();
   }
 
   onConnect(connection: Party.Connection) {
@@ -106,6 +105,12 @@ export default class SessionServer implements Party.Server {
         type: "server.participant_count",
         participantCount: this.state.participants.size
       });
+    }
+
+    if (hostLeft && this.state.hosts.size === 0 && this.state.status !== "closed") {
+      // Host left. Set a 15-second grace period alarm in case they just refreshed the page.
+      // If they don't return, onAlarm will trigger and wipe the room's DB.
+      this.room.storage.setAlarm(Date.now() + 15 * 1000);
     }
   }
 
@@ -165,6 +170,7 @@ export default class SessionServer implements Party.Server {
           closedAt: null
         };
         this.state.status = "active";
+        this.state.lastResponseByParticipant.clear(); // Reset rate limit for new interaction
         await this.room.storage.put("status", "active");
         this.broadcast({
           type: "server.interaction_started",
@@ -197,6 +203,7 @@ export default class SessionServer implements Party.Server {
           closedAt: null
         };
         this.state.status = "active";
+        this.state.lastResponseByParticipant.clear(); // Reset rate limit for new interaction
         await this.room.storage.put("status", "active");
         this.broadcast({
           type: "server.interaction_started",
@@ -259,7 +266,12 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
-        await this.onAlarm();
+        this.state.status = "closed";
+        this.broadcast({
+          type: "server.session_snapshot",
+          snapshot: snapshotFromState(this.state)
+        });
+        await this.room.storage.deleteAll();
         return;
     }
   }

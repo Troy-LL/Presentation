@@ -122,6 +122,19 @@ export function HostConsole({
     enabled: Boolean(hostToken && initialSnapshot)
   });
 
+  // ── Prompt before closing ────────────────────────────────────────────────
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Prompt warning unless explicitly closed
+      if (snapshot && snapshot.status !== "closed") {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [snapshot]);
+
   // ── Loading / error states ────────────────────────────────────────────────
   if (loading) {
     return (
@@ -252,7 +265,7 @@ export function HostConsole({
                     <div className="mt-4 flex flex-wrap gap-3">
                       <button
                         className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={!draft.trim() || !hostToken || isClosed || isActive}
+                        disabled={!draft.trim() || !hostToken || isClosed}
                         onClick={() => startPrompt(draft)}
                         type="button"
                       >
@@ -290,7 +303,7 @@ export function HostConsole({
                             >
                               <button
                                 className="px-4 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50"
-                                disabled={isClosed || isActive}
+                                disabled={isClosed}
                                 onClick={() => { setDraft(preset); startPrompt(preset); }}
                                 type="button"
                               >
@@ -361,7 +374,7 @@ export function HostConsole({
                     <div className="mt-5 flex gap-3">
                       <button
                         className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={!pollQuestion.trim() || !validPollOptions || isClosed || isActive}
+                        disabled={!pollQuestion.trim() || !validPollOptions || isClosed}
                         onClick={() => startPoll(pollQuestion, pollOptions)}
                         type="button"
                       >
