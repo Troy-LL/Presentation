@@ -517,7 +517,7 @@ export function HostConsole({
           if (!context) continue;
           canvas.width = viewport.width;
           canvas.height = viewport.height;
-          await page.render({ canvas, canvasContext: context, viewport }).promise;
+          await page.render({ canvasContext: context, viewport }).promise;
           thumbs.push(canvas.toDataURL("image/png"));
         }
         if (active) {

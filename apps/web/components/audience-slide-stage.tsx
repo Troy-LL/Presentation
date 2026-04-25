@@ -26,13 +26,10 @@ export function AudienceSlideStage({ interaction }: Props) {
       setLoading(true);
       setLoadError(null);
       try {
-        const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
-          import.meta.url
-        ).toString();
+        const { getDocument, GlobalWorkerOptions, version } = await import("pdfjs-dist");
+        GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version || "4.4.168"}/build/pdf.worker.min.mjs`;
 
-        const doc = await pdfjs.getDocument(interaction.payload.sourceUrl).promise;
+        const doc = await getDocument(interaction.payload.sourceUrl).promise;
         const page = await doc.getPage(interaction.payload.currentSlideIndex + 1);
         const viewport = page.getViewport({ scale: 1.6 });
         const canvas = document.createElement("canvas");
@@ -43,7 +40,7 @@ export function AudienceSlideStage({ interaction }: Props) {
         canvas.width = viewport.width;
         canvas.height = viewport.height;
 
-        await page.render({ canvas, canvasContext: context, viewport }).promise;
+        await page.render({ canvasContext: context, viewport }).promise;
         if (active) {
           setPageDataUrl(canvas.toDataURL("image/png"));
         }
