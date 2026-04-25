@@ -250,7 +250,16 @@ export default class SessionServer implements Party.Server {
   }
 
   onConnect(connection: Party.Connection) {
-    void connection;
+    // Limit connections per IP to prevent bot swarms
+    const ip = connection.address;
+    const connectionsFromIp = Array.from(this.room.getConnections()).filter(c => c.address === ip);
+    
+    if (connectionsFromIp.length > 5) {
+      connection.send(serialize({ type: "server.error", message: "Too many connections from this device." }));
+      connection.close();
+      return;
+    }
+
     this.bumpAlarm();
     return;
   }
