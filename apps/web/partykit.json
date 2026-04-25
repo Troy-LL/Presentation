@@ -1,0 +1,9 @@
+{
+  "name": "interactive-presentation",
+  "main": "partykit/session.ts",
+  "parties": {
+    "session": "partykit/session.ts"
+  },
+  "compatibilityDate": "2026-04-25"
+}
+
