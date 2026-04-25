@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 
 import type { SessionSnapshot } from "@interactive-presentation/types";
 
+import { AudienceCountdown } from "@/components/audience-countdown";
+import { AudienceOpenText } from "@/components/audience-open-text";
 import { AudiencePoll } from "@/components/audience-poll";
+import { AudienceQuiz } from "@/components/audience-quiz";
+import { AudienceReactions } from "@/components/audience-reactions";
+import { AudienceSlideStage } from "@/components/audience-slide-stage";
 import { getOrCreateParticipantId } from "@/lib/identity";
 import { useSessionConnection } from "@/lib/use-session-connection";
 
@@ -58,7 +63,15 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     };
   }, [sessionCode]);
 
-  const { snapshot, connectionState, error, submitVote } = useSessionConnection({
+  const {
+    snapshot,
+    connectionState,
+    error,
+    submitVote,
+    submitQuizAnswer,
+    sendReaction,
+    submitTextResponse
+  } = useSessionConnection({
     sessionCode,
     role: "audience",
     participantId,
@@ -133,6 +146,41 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
         </div>
       </main>
     );
+  }
+
+  if (snapshot.currentInteraction?.type === "quiz") {
+    return (
+      <AudienceQuiz
+        onSubmitAnswer={submitQuizAnswer}
+        quiz={snapshot.currentInteraction}
+      />
+    );
+  }
+
+  if (snapshot.currentInteraction?.type === "reactions") {
+    return (
+      <AudienceReactions
+        onSendReaction={sendReaction}
+        reactions={snapshot.currentInteraction}
+      />
+    );
+  }
+
+  if (snapshot.currentInteraction?.type === "open_text") {
+    return (
+      <AudienceOpenText
+        interaction={snapshot.currentInteraction}
+        onSubmit={submitTextResponse}
+      />
+    );
+  }
+
+  if (snapshot.currentInteraction?.type === "countdown") {
+    return <AudienceCountdown interaction={snapshot.currentInteraction} />;
+  }
+
+  if (snapshot.currentInteraction?.type === "slides") {
+    return <AudienceSlideStage interaction={snapshot.currentInteraction} />;
   }
 
   return (

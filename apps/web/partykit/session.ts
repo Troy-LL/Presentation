@@ -2,8 +2,14 @@ import type * as Party from "partykit/server";
 
 import type {
   ClientMessage,
+  CountdownInteraction,
+  OpenTextInteraction,
+  OpenTextResponse,
   PollInteraction,
   PromptInteraction,
+  ReactionsInteraction,
+  SlideDeckInteraction,
+  QuizInteraction,
   ServerMessage,
   SessionSnapshot,
   SessionStatus
@@ -14,12 +20,19 @@ type RoomState = {
   status: SessionStatus;
   createdAt: string;
   hostToken: string | null;
-  currentInteraction: PromptInteraction | PollInteraction | null;
+  currentInteraction:
+    | PromptInteraction
+    | PollInteraction
+    | QuizInteraction
+    | ReactionsInteraction
+    | OpenTextInteraction
+    | CountdownInteraction
+    | SlideDeckInteraction
+    | null;
   participants: Map<string, string>;
   hosts: Set<string>;
   // Rate limiting: participantId → interaction ID they last responded to
   lastResponseByParticipant: Map<string, string>;
-  // Rate limiting: participantId → timestamps of recent emoji reactions
   reactionTimestamps: Map<string, number[]>;
 };
 
@@ -53,6 +66,8 @@ function serialize(message: ServerMessage) {
 
 export default class SessionServer implements Party.Server {
   private state: RoomState;
+  private static readonly MAX_OPEN_TEXT_LENGTH = 280;
+  private static readonly MAX_OPEN_TEXT_RESPONSES = 200;
 
   constructor(readonly room: Party.Room) {
     this.state = createEmptyState(this.room.id);
@@ -92,6 +107,7 @@ export default class SessionServer implements Party.Server {
   }
 
   onConnect(connection: Party.Connection) {
+    void connection;
     this.bumpAlarm();
     return;
   }
@@ -139,7 +155,6 @@ export default class SessionServer implements Party.Server {
         return;
 
       case "client.host_connect":
-        console.log(`[host_connect] Room: ${this.room.id}. Stored token: ${this.state.hostToken}, Received: ${message.hostToken}`);
         if (!this.isValidHost(message.hostToken)) {
           sender.send(serialize({ type: "server.error", message: "Host token rejected." }));
           return;
@@ -179,14 +194,17 @@ export default class SessionServer implements Party.Server {
         return;
 
       case "client.start_poll": {
-        if (!this.canControlRoom(sender.id, message.hostToken) || !message.question.trim() || message.options.length < 2) {
+        const question = message.question.trim();
+        const options = message.options
+          .map((option) => option.trim())
+          .filter(Boolean)
+          .slice(0, 10)
+          .map((text) => ({ id: crypto.randomUUID(), text }));
+
+        if (!this.canControlRoom(sender.id, message.hostToken) || !question || options.length < 2) {
           sender.send(serialize({ type: "server.error", message: "Poll launch rejected." }));
           return;
         }
-
-        const options = message.options
-          .filter((o) => o.trim())
-          .map((o) => ({ id: crypto.randomUUID(), text: o.trim() }));
 
         const votes: Record<string, number> = {};
         for (const opt of options) {
@@ -196,7 +214,7 @@ export default class SessionServer implements Party.Server {
         this.state.currentInteraction = {
           id: crypto.randomUUID(),
           type: "poll",
-          payload: { question: message.question.trim(), options },
+          payload: { question, options },
           votes,
           resultsRevealed: false,
           startedAt: new Date().toISOString(),
@@ -204,6 +222,186 @@ export default class SessionServer implements Party.Server {
         };
         this.state.status = "active";
         this.state.lastResponseByParticipant.clear(); // Reset rate limit for new interaction
+        await this.room.storage.put("status", "active");
+        this.broadcast({
+          type: "server.interaction_started",
+          interaction: this.state.currentInteraction
+        });
+        return;
+      }
+
+      case "client.start_quiz": {
+        const question = message.question.trim();
+        const options = message.options
+          .map((option) => option.trim())
+          .filter(Boolean)
+          .slice(0, 10)
+          .map((text) => ({ id: crypto.randomUUID(), text }));
+        const correctOptionId = options[message.correctOptionIndex]?.id;
+
+        if (
+          !this.canControlRoom(sender.id, message.hostToken) ||
+          !question ||
+          options.length < 2 ||
+          !correctOptionId
+        ) {
+          sender.send(serialize({ type: "server.error", message: "Quiz launch rejected." }));
+          return;
+        }
+
+        const votes: Record<string, number> = {};
+        for (const opt of options) {
+          votes[opt.id] = 0;
+        }
+
+        this.state.currentInteraction = {
+          id: crypto.randomUUID(),
+          type: "quiz",
+          payload: { question, options, correctOptionId },
+          votes,
+          answerRevealed: false,
+          startedAt: new Date().toISOString(),
+          closedAt: null
+        };
+        this.state.status = "active";
+        this.state.lastResponseByParticipant.clear();
+        await this.room.storage.put("status", "active");
+        this.broadcast({
+          type: "server.interaction_started",
+          interaction: this.state.currentInteraction
+        });
+        return;
+      }
+
+      case "client.start_reactions": {
+        const prompt = message.prompt.trim();
+        const emojis = message.emojis.map((emoji) => emoji.trim()).filter(Boolean).slice(0, 8);
+
+        if (!this.canControlRoom(sender.id, message.hostToken) || !prompt || emojis.length < 2) {
+          sender.send(serialize({ type: "server.error", message: "Reaction mode launch rejected." }));
+          return;
+        }
+
+        const reactionCounts: Record<string, number> = {};
+        for (const emoji of emojis) {
+          reactionCounts[emoji] = 0;
+        }
+
+        this.state.currentInteraction = {
+          id: crypto.randomUUID(),
+          type: "reactions",
+          payload: { prompt, emojis },
+          reactionCounts,
+          startedAt: new Date().toISOString(),
+          closedAt: null
+        };
+        this.state.status = "active";
+        this.state.reactionTimestamps.clear();
+        await this.room.storage.put("status", "active");
+        this.broadcast({
+          type: "server.interaction_started",
+          interaction: this.state.currentInteraction
+        });
+        return;
+      }
+      case "client.start_open_text": {
+        const prompt = message.prompt.trim();
+
+        if (!this.canControlRoom(sender.id, message.hostToken) || !prompt) {
+          sender.send(serialize({ type: "server.error", message: "Open text launch rejected." }));
+          return;
+        }
+
+        this.state.currentInteraction = {
+          id: crypto.randomUUID(),
+          type: "open_text",
+          payload: { prompt },
+          responses: [],
+          responseCount: 0,
+          startedAt: new Date().toISOString(),
+          closedAt: null
+        };
+        this.state.status = "active";
+        this.state.lastResponseByParticipant.clear();
+        await this.room.storage.put("status", "active");
+        this.broadcast({
+          type: "server.interaction_started",
+          interaction: this.state.currentInteraction
+        });
+        return;
+      }
+      case "client.start_countdown": {
+        const label = message.label.trim();
+        const durationSeconds = Math.floor(message.durationSeconds);
+
+        if (
+          !this.canControlRoom(sender.id, message.hostToken) ||
+          !label ||
+          !Number.isFinite(durationSeconds) ||
+          durationSeconds < 3 ||
+          durationSeconds > 3600
+        ) {
+          sender.send(serialize({ type: "server.error", message: "Countdown launch rejected." }));
+          return;
+        }
+
+        const startedAt = new Date();
+        const endsAt = new Date(startedAt.getTime() + durationSeconds * 1000).toISOString();
+
+        this.state.currentInteraction = {
+          id: crypto.randomUUID(),
+          type: "countdown",
+          payload: {
+            label,
+            durationSeconds,
+            endsAt
+          },
+          startedAt: startedAt.toISOString(),
+          closedAt: null
+        };
+        this.state.status = "active";
+        await this.room.storage.put("status", "active");
+        this.broadcast({
+          type: "server.interaction_started",
+          interaction: this.state.currentInteraction
+        });
+        this.broadcast({
+          type: "server.countdown_started",
+          interaction: this.state.currentInteraction
+        });
+        return;
+      }
+      case "client.start_slide_deck": {
+        const title = message.title?.trim() || null;
+        const sourceUrl = message.sourceUrl.trim();
+        const totalSlides = Math.floor(message.totalSlides);
+
+        if (
+          !this.canControlRoom(sender.id, message.hostToken) ||
+          !message.deckId.trim() ||
+          !sourceUrl ||
+          !Number.isFinite(totalSlides) ||
+          totalSlides < 1 ||
+          totalSlides > 2000
+        ) {
+          sender.send(serialize({ type: "server.error", message: "Slide deck launch rejected." }));
+          return;
+        }
+
+        this.state.currentInteraction = {
+          id: crypto.randomUUID(),
+          type: "slides",
+          payload: {
+            deckId: message.deckId.trim(),
+            title,
+            sourceUrl,
+            totalSlides,
+            currentSlideIndex: 0
+          },
+          startedAt: new Date().toISOString(),
+          closedAt: null
+        };
+        this.state.status = "active";
         await this.room.storage.put("status", "active");
         this.broadcast({
           type: "server.interaction_started",
@@ -232,6 +430,104 @@ export default class SessionServer implements Party.Server {
         return;
       }
 
+      case "client.submit_quiz_answer": {
+        const quiz = this.state.currentInteraction;
+        if (!quiz || quiz.type !== "quiz") return;
+
+        const participantId = this.state.participants.get(sender.id) ?? sender.id;
+        if (this.hasAlreadyResponded(participantId)) return;
+        if (!(message.optionId in quiz.votes)) return;
+
+        quiz.votes[message.optionId] = (quiz.votes[message.optionId] ?? 0) + 1;
+        this.recordResponse(participantId);
+
+        this.broadcast({
+          type: "server.quiz_votes_updated",
+          votes: { ...quiz.votes }
+        });
+        return;
+      }
+
+      case "client.send_reaction": {
+        const reactions = this.state.currentInteraction;
+        if (!reactions || reactions.type !== "reactions") return;
+        if (!(message.emoji in reactions.reactionCounts)) return;
+
+        const participantId = this.state.participants.get(sender.id) ?? sender.id;
+        if (!this.isWithinReactionRateLimit(participantId)) return;
+
+        reactions.reactionCounts[message.emoji] = (reactions.reactionCounts[message.emoji] ?? 0) + 1;
+        this.broadcast({
+          type: "server.reactions_updated",
+          reactionCounts: { ...reactions.reactionCounts },
+          latestEmoji: message.emoji
+        });
+        return;
+      }
+      case "client.submit_text_response": {
+        const interaction = this.state.currentInteraction;
+        if (!interaction || interaction.type !== "open_text") return;
+
+        const participantId = this.state.participants.get(sender.id) ?? sender.id;
+        if (this.hasAlreadyResponded(participantId)) return;
+
+        const text = message.text.trim().slice(0, SessionServer.MAX_OPEN_TEXT_LENGTH);
+        if (!text) return;
+
+        const response: OpenTextResponse = {
+          id: crypto.randomUUID(),
+          participantId,
+          text,
+          submittedAt: new Date().toISOString()
+        };
+
+        interaction.responses = [response, ...interaction.responses].slice(
+          0,
+          SessionServer.MAX_OPEN_TEXT_RESPONSES
+        );
+        interaction.responseCount += 1;
+        this.recordResponse(participantId);
+
+        this.broadcast({
+          type: "server.open_text_responses_updated",
+          responses: interaction.responses,
+          responseCount: interaction.responseCount
+        });
+        return;
+      }
+      case "client.set_slide": {
+        const interaction = this.state.currentInteraction;
+        if (
+          !this.canControlRoom(sender.id, message.hostToken) ||
+          !interaction ||
+          interaction.type !== "slides"
+        ) {
+          sender.send(serialize({ type: "server.error", message: "Slide update rejected." }));
+          return;
+        }
+
+        const index = Math.floor(message.index);
+        if (
+          !Number.isFinite(index) ||
+          index < 0 ||
+          index >= interaction.payload.totalSlides
+        ) {
+          sender.send(serialize({ type: "server.error", message: "Slide index out of range." }));
+          return;
+        }
+
+        interaction.payload.currentSlideIndex = index;
+        this.broadcast({
+          type: "server.slide_set",
+          index
+        });
+        this.broadcast({
+          type: "server.interaction_started",
+          interaction
+        });
+        return;
+      }
+
       case "client.reveal_poll_results": {
         const poll = this.state.currentInteraction;
         if (!this.canControlRoom(sender.id, message.hostToken) || !poll || poll.type !== "poll") {
@@ -241,6 +537,18 @@ export default class SessionServer implements Party.Server {
 
         poll.resultsRevealed = true;
         this.broadcast({ type: "server.poll_results_revealed" });
+        return;
+      }
+
+      case "client.reveal_quiz_answer": {
+        const quiz = this.state.currentInteraction;
+        if (!this.canControlRoom(sender.id, message.hostToken) || !quiz || quiz.type !== "quiz") {
+          sender.send(serialize({ type: "server.error", message: "Reveal rejected." }));
+          return;
+        }
+
+        quiz.answerRevealed = true;
+        this.broadcast({ type: "server.quiz_answer_revealed" });
         return;
       }
 
@@ -255,6 +563,7 @@ export default class SessionServer implements Party.Server {
         await this.room.storage.put("status", "lobby");
         // Reset per-interaction rate limit state when a new round begins
         this.state.lastResponseByParticipant.clear();
+        this.state.reactionTimestamps.clear();
         this.broadcast({
           type: "server.interaction_cleared"
         });
@@ -291,12 +600,12 @@ export default class SessionServer implements Party.Server {
       const payload = (await request.json()) as { action?: string; hostToken?: string };
 
       if (payload.action !== "initialize_session" || !payload.hostToken) {
-        console.log(`[POST] Invalid request to room ${this.room.id}:`, payload);
+        console.warn(`[POST] Invalid initialize_session payload for room ${this.room.id}.`);
         return Response.json({ error: "Invalid session initialization request." }, { status: 400 });
       }
 
       if (this.state.hostToken) {
-        console.log(`[POST] 409 Conflict. Room: ${this.room.id}, expected to be null but got hostToken: ${this.state.hostToken}`);
+        console.warn(`[POST] Session already exists for room ${this.room.id}.`);
         return Response.json({ error: "Session already exists." }, { status: 409 });
       }
 
@@ -343,10 +652,6 @@ export default class SessionServer implements Party.Server {
     }
   }
 
-  /**
-   * Returns true if the participant is within the allowed emoji reaction rate (max 5/sec).
-   * Older timestamps are pruned on each call to keep memory bounded.
-   */
   protected isWithinReactionRateLimit(participantId: string): boolean {
     const now = Date.now();
     const windowMs = 1000;

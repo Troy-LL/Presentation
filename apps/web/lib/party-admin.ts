@@ -8,13 +8,12 @@ const snapshotSchema = z.object({
   currentInteraction: z
     .object({
       id: z.string(),
-      type: z.literal("prompt"),
-      payload: z.object({
-        text: z.string()
-      }),
+      type: z.string(),
+      payload: z.record(z.string(), z.unknown()),
       startedAt: z.string(),
       closedAt: z.string().nullable()
     })
+    .passthrough()
     .nullable(),
   participantCount: z.number(),
   createdAt: z.string()
@@ -61,6 +60,6 @@ export async function getSessionSnapshot(sessionCode: string): Promise<SessionSn
     throw new Error("Could not fetch session snapshot.");
   }
 
-  return snapshotSchema.parse(await response.json());
+  return snapshotSchema.parse(await response.json()) as SessionSnapshot;
 }
 

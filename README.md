@@ -4,7 +4,9 @@ Minimal monorepo for a live presentation room:
 
 - Host creates a session and gets a short code plus QR join link
 - Audience joins from `/join` and waits on a blank lobby
-- Host launches a crowd prompt and every connected screen updates live through PartyKit
+- Host launches a crowd prompt or a live poll and every connected screen updates live through PartyKit
+- Poll flow includes vote aggregation and host-controlled result reveal
+- Hosts can save reusable crowd-prompt presets locally for faster facilitation
 
 ## Workspace
 

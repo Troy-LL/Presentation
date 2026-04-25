@@ -164,26 +164,27 @@ Audience device  ──WebSocket──┼──► Session server ──► Host
 - [x] Host can close the poll and reveal final results
 
 ### Phase 3 — More Modes (Week 4–5)
-- [ ] Quiz mode (poll + reveal correct answer)
-- [ ] Emoji reaction mode
-- [ ] Open text submission (host sees responses stream in)
-- [ ] Countdown timer
+- [x] Quiz mode (poll + reveal correct answer)
+- [x] Emoji reaction mode
+- [x] Open text submission (host sees responses stream in)
+- [x] Countdown timer
 
 ### Phase 4 — Slide Deck Engine (PDF-to-Canvas)
-- [ ] **Technical Foundation**: Integrate `pdfjs-dist` and build the 16:9 **Presentation Stage**
-- [ ] **Layered Rendering**: Setup the three-layer stack (Slide Image -> Interaction Overlay -> Controls)
-- [ ] **Slide Sync**: Implement `{ type: "SET_SLIDE", index: X }` WebSocket event to sync whole room
-- [ ] **Interactivity**: 
-    - [ ] Keyboard listeners (Arrow keys/Clicker support for Host)
-    - [ ] Slide Navigator (Filmstrip of thumbnails for quick jumping)
-    - [ ] Contextual Interaction (Auto-launch specific polls when hitting certain slides)
-- [ ] **Automatic Clean-up**: Ensure all binary slide assets and metadata are wiped when host ends session
+- [x] **Technical Foundation**: Integrate `pdfjs-dist` and build the 16:9 **Presentation Stage**
+- [x] **Layered Rendering**: Setup the three-layer stack (Slide Image -> Interaction Overlay -> Controls)
+- [x] **Slide Sync**: Implement `{ type: "SET_SLIDE", index: X }` WebSocket event to sync whole room
+- [x] **Interactivity**: 
+  - [x] Keyboard listeners (Arrow keys/Clicker support for Host)
+  - [x] Slide Navigator (Filmstrip of thumbnails for quick jumping)
+  - [x] Contextual Interaction (Auto-launch specific polls when hitting certain slides)
+- [x] **Automatic Clean-up**: Ensure all binary slide assets and metadata are wiped when host ends session
 
 ### Phase 5 — Polish (Week 6)
 - [ ] Mobile-first responsive design (audience screens are phones)
-- [ ] Reconnection handling (participant drops WiFi → reconnects seamlessly)
+- [x] Reconnection handling (participant drops WiFi → reconnects seamlessly)
 - [ ] Session history (host can review past interactions)
 - [x] Premade Presets (host can save commonly used prompts for one-tap launch)
+- [ ] Attention nudge mode (host can trigger a short "Look at your device now" banner/sound/vibration cue before a prompt or poll)
 - [ ] Basic host analytics (response rates, most popular option, etc.)
 - [ ] Browser Fullscreen API integration for Host Dashboard
 
@@ -218,6 +219,7 @@ At 10–40 concurrent users per session, this stack is massively over-provisione
 
 ## 11. Nice-to-Haves (Post-MVP)
 
+- Prompt transition alert (automatically notify audience when host switches to a new prompt/interaction)
 - Word cloud from open text responses
 - Image/GIF display mode (host shows a meme, audience reacts)
 - "Rate this on a scale of 1–5" slider interaction

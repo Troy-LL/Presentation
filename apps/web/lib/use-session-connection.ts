@@ -35,12 +35,19 @@ export function useSessionConnection({
     enabled ? "connecting" : "idle"
   );
   const [error, setError] = useState<string | null>(null);
+  const [latestReactionEmoji, setLatestReactionEmoji] = useState<string | null>(null);
   const socketRef = useRef<PartySocket | null>(null);
+  const snapshotRef = useRef<SessionSnapshot | null>(initialSnapshot);
   const prevInteractionRef = useRef<SessionSnapshot["currentInteraction"]>(null);
 
   useEffect(() => {
     setSnapshot(initialSnapshot);
+    snapshotRef.current = initialSnapshot;
   }, [initialSnapshot]);
+
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
 
   useEffect(() => {
     if (!enabled) {
@@ -73,6 +80,7 @@ export function useSessionConnection({
 
       switch (message.type) {
         case "server.session_snapshot":
+          snapshotRef.current = message.snapshot;
           setSnapshot(message.snapshot);
           prevInteractionRef.current = message.snapshot.currentInteraction;
           break;
@@ -87,6 +95,7 @@ export function useSessionConnection({
           );
           break;
         case "server.interaction_started":
+          setLatestReactionEmoji(null);
           prevInteractionRef.current = message.interaction;
           setSnapshot((current) =>
             current
@@ -110,6 +119,70 @@ export function useSessionConnection({
             };
           });
           break;
+        case "server.reactions_updated":
+          setLatestReactionEmoji(message.latestEmoji);
+          setSnapshot((current) => {
+            if (!current || current.currentInteraction?.type !== "reactions") return current;
+            return {
+              ...current,
+              currentInteraction: {
+                ...current.currentInteraction,
+                reactionCounts: message.reactionCounts
+              }
+            };
+          });
+          break;
+        case "server.open_text_responses_updated":
+          setSnapshot((current) => {
+            if (!current || current.currentInteraction?.type !== "open_text") return current;
+            return {
+              ...current,
+              currentInteraction: {
+                ...current.currentInteraction,
+                responses: message.responses,
+                responseCount: message.responseCount
+              }
+            };
+          });
+          break;
+        case "server.countdown_started":
+          setSnapshot((current) =>
+            current
+              ? {
+                  ...current,
+                  status: "active",
+                  currentInteraction: message.interaction
+                }
+              : current
+          );
+          break;
+        case "server.slide_set":
+          setSnapshot((current) => {
+            if (!current || current.currentInteraction?.type !== "slides") return current;
+            return {
+              ...current,
+              currentInteraction: {
+                ...current.currentInteraction,
+                payload: {
+                  ...current.currentInteraction.payload,
+                  currentSlideIndex: message.index
+                }
+              }
+            };
+          });
+          break;
+        case "server.quiz_votes_updated":
+          setSnapshot((current) => {
+            if (!current || current.currentInteraction?.type !== "quiz") return current;
+            return {
+              ...current,
+              currentInteraction: {
+                ...current.currentInteraction,
+                votes: message.votes
+              }
+            };
+          });
+          break;
         case "server.poll_results_revealed":
           setSnapshot((current) => {
             if (!current || current.currentInteraction?.type !== "poll") return current;
@@ -122,7 +195,20 @@ export function useSessionConnection({
             };
           });
           break;
+        case "server.quiz_answer_revealed":
+          setSnapshot((current) => {
+            if (!current || current.currentInteraction?.type !== "quiz") return current;
+            return {
+              ...current,
+              currentInteraction: {
+                ...current.currentInteraction,
+                answerRevealed: true
+              }
+            };
+          });
+          break;
         case "server.interaction_cleared":
+          setLatestReactionEmoji(null);
           prevInteractionRef.current = null;
           setSnapshot((current) =>
             current
@@ -166,14 +252,96 @@ export function useSessionConnection({
         const message: ClientMessage = { type: "client.start_poll", hostToken, question, options };
         socketRef.current.send(JSON.stringify(message));
       },
+      startQuiz(question: string, options: string[], correctOptionIndex: number) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = {
+          type: "client.start_quiz",
+          hostToken,
+          question,
+          options,
+          correctOptionIndex
+        };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      startReactions(prompt: string, emojis: string[]) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.start_reactions", hostToken, prompt, emojis };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      startOpenText(prompt: string) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.start_open_text", hostToken, prompt };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      startCountdown(label: string, durationSeconds: number) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = {
+          type: "client.start_countdown",
+          hostToken,
+          label,
+          durationSeconds
+        };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      startSlideDeck(deckId: string, title: string | null, sourceUrl: string, totalSlides: number) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = {
+          type: "client.start_slide_deck",
+          hostToken,
+          deckId,
+          title,
+          sourceUrl,
+          totalSlides
+        };
+        socketRef.current.send(JSON.stringify(message));
+      },
       submitVote(optionId: string) {
         if (!socketRef.current) return;
         const message: ClientMessage = { type: "client.submit_vote", optionId };
         socketRef.current.send(JSON.stringify(message));
       },
+      submitQuizAnswer(optionId: string) {
+        if (!socketRef.current) return;
+        const message: ClientMessage = { type: "client.submit_quiz_answer", optionId };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      sendReaction(emoji: string) {
+        if (!socketRef.current) return;
+        const message: ClientMessage = { type: "client.send_reaction", emoji };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      submitTextResponse(text: string) {
+        if (!socketRef.current) return;
+        const message: ClientMessage = { type: "client.submit_text_response", text };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      setSlide(index: number) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.set_slide", hostToken, index };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      nextSlide() {
+        if (!socketRef.current || !hostToken || snapshotRef.current?.currentInteraction?.type !== "slides") return;
+        const current = snapshotRef.current.currentInteraction;
+        const nextIndex = Math.min(current.payload.totalSlides - 1, current.payload.currentSlideIndex + 1);
+        const message: ClientMessage = { type: "client.set_slide", hostToken, index: nextIndex };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      prevSlide() {
+        if (!socketRef.current || !hostToken || snapshotRef.current?.currentInteraction?.type !== "slides") return;
+        const current = snapshotRef.current.currentInteraction;
+        const prevIndex = Math.max(0, current.payload.currentSlideIndex - 1);
+        const message: ClientMessage = { type: "client.set_slide", hostToken, index: prevIndex };
+        socketRef.current.send(JSON.stringify(message));
+      },
       revealPollResults() {
         if (!socketRef.current || !hostToken) return;
         const message: ClientMessage = { type: "client.reveal_poll_results", hostToken };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      revealQuizAnswer() {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.reveal_quiz_answer", hostToken };
         socketRef.current.send(JSON.stringify(message));
       },
       clearInteraction() {
@@ -194,6 +362,7 @@ export function useSessionConnection({
     snapshot,
     connectionState,
     error,
+    latestReactionEmoji,
     ...actions
   };
 }
