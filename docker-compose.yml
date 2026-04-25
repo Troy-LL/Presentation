@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # The Next.js frontend
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_MODE=local
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - NEXT_PUBLIC_PARTYKIT_HOST=localhost:3001
+      - PARTYKIT_SERVER_URL=http://party:3001
+    depends_on:
+      - party
+    restart: always
+
+  # The PartyKit local WebSocket server
+  party:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Override the command to run the party server instead of Next.js
+    command: npx partykit dev apps/web/partykit/session.ts --port 3001 --host 0.0.0.0
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+    restart: always

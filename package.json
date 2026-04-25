@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "concurrently -n web,party \"npm run dev --workspace @interactive-presentation/web\" \"npm run dev:party --workspace @interactive-presentation/web\"",
     "build": "npm run build --workspace @interactive-presentation/web",
+    "start": "npm run start --workspace @interactive-presentation/web",
     "lint": "npm run lint --workspace @interactive-presentation/web",
     "typecheck": "npm run typecheck --workspace @interactive-presentation/web",
     "test": "npm run test --workspace @interactive-presentation/web"

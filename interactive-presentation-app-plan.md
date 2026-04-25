@@ -289,33 +289,33 @@ Audience device  ──WebSocket──┼──► PartyKit room / local ws serv
 - [x] Browser Fullscreen API integration for Host Dashboard
 
 ### Phase 6 — Open Source Release
-- [ ] Release docs pass
-  - [ ] Clean README with architecture overview and project purpose
-  - [ ] Document both deployment targets: localhost mode and cloud mode
-  - [ ] Add environment variable reference for `NEXT_PUBLIC_MODE`, PartyKit, and app URL settings
-  - [ ] Add troubleshooting notes for common startup and connection issues
-- [ ] One-click Vercel deployment
-  - [ ] Add deployment instructions/button path for the frontend
-  - [ ] Verify PartyKit cloud room setup is documented for Vercel users
-  - [ ] Confirm the docs clearly state that no Railway or Fly.io setup is required
-- [ ] Localhost quickstart
-  - [ ] Document `npm run dev` as the local startup command
-  - [ ] Explain how to share the host machine's LAN IP and QR code to audience phones
-  - [ ] Note the expected local ports and how to handle port conflicts
-- [ ] Docker Compose self-hosting
-  - [ ] Add a Compose file for running the app locally on a server
-  - [ ] Include service wiring, ports, and env vars in the docs
-  - [ ] Verify the compose flow matches the documented startup steps
-- [ ] Contributing guide
-  - [ ] Add branch/PR workflow guidance
-  - [ ] Add code style and testing expectations
-  - [ ] Add a minimal issue/PR checklist for contributors
+- [x] Release docs pass
+  - [x] Clean README with architecture overview and project purpose
+  - [x] Document both deployment targets: localhost mode and cloud mode
+  - [x] Add environment variable reference for `NEXT_PUBLIC_MODE`, PartyKit, and app URL settings
+  - [x] Add troubleshooting notes for common startup and connection issues
+- [x] One-click Vercel deployment
+  - [x] Add deployment instructions/button path for the frontend
+  - [x] Verify PartyKit cloud room setup is documented for Vercel users
+  - [x] Confirm the docs clearly state that no Railway or Fly.io setup is required
+- [x] Localhost quickstart
+  - [x] Document `npm run dev` as the local startup command
+  - [x] Explain how to share the host machine's LAN IP and QR code to audience phones
+  - [x] Note the expected local ports and how to handle port conflicts
+- [x] Docker Compose self-hosting
+  - [x] Add a Compose file for running the app locally on a server
+  - [x] Include service wiring, ports, and env vars in the docs
+  - [x] Verify the compose flow matches the documented startup steps
+- [x] Contributing guide
+  - [x] Add branch/PR workflow guidance
+  - [x] Add code style and testing expectations
+  - [x] Add a minimal issue/PR checklist for contributors
 
 ### Phase 6 — Release Done Criteria
-- [ ] A fresh clone can be started locally using the README alone
-- [ ] Cloud deployment instructions work without external platform ambiguity
-- [ ] Docker Compose starts the full stack without undocumented manual steps
-- [ ] Contributing guide is present and matches the repo workflow
+- [x] A fresh clone can be started locally using the README alone
+- [x] Cloud deployment instructions work without external platform ambiguity
+- [x] Docker Compose starts the full stack without undocumented manual steps
+- [x] Contributing guide is present and matches the repo workflow
 
 ---
 

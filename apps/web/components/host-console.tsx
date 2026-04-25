@@ -192,6 +192,7 @@ export function HostConsole({
   const [triggerPollOptionsText, setTriggerPollOptionsText] = useState("Yes\nNo");
   const [slideTriggers, setSlideTriggers] = useState<Record<number, SlideTrigger>>({});
   const [autoLaunchTriggers, setAutoLaunchTriggers] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const lastTriggeredSlideRef = useRef<number | null>(null);
 
   const resetSlideLocalState = () => {
@@ -407,15 +408,17 @@ export function HostConsole({
     setSlideLoading(true);
     setSlideLoadError(null);
     try {
-      const pdfjs = await import("pdfjs-dist");
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-        "pdfjs-dist/build/pdf.worker.min.mjs",
-        import.meta.url
-      ).toString();
-      const loadingTask = pdfjs.getDocument(source);
+      const { getDocument, GlobalWorkerOptions, version } = await import("pdfjs-dist");
+
+      if (!GlobalWorkerOptions.workerSrc) {
+        GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version || "4.4.168"}/build/pdf.worker.min.mjs`;
+      }
+
+      const loadingTask = getDocument(source);
       const pdf = await loadingTask.promise;
       setSlideTotalSlides(pdf.numPages);
     } catch (error) {
+      console.error("PDF load error:", error);
       setSlideLoadError(error instanceof Error ? error.message : "Could not load PDF.");
       setSlideTotalSlides(0);
     } finally {
@@ -424,17 +427,57 @@ export function HostConsole({
   };
 
   const handleSlideFile = async (file: File | null) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      setSlideSourceUrl(result);
+    if (!file || file.type !== "application/pdf") return;
+    
+    setSlideLoading(true);
+    setSlideLoadError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to upload PDF.");
+      }
+
+      const { url } = await response.json();
+      
+      setSlideSourceUrl(url);
       if (!slideTitle.trim()) {
         setSlideTitle(file.name.replace(/\.pdf$/i, ""));
       }
-      await resolveSlideCount(result);
-    };
-    reader.readAsDataURL(file);
+      await resolveSlideCount(url);
+    } catch (err) {
+      setSlideLoadError(err instanceof Error ? err.message : "Could not upload PDF.");
+      setSlideSourceUrl("");
+    } finally {
+      setSlideLoading(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await handleSlideFile(file);
+    }
   };
 
   useEffect(() => {
@@ -457,12 +500,13 @@ export function HostConsole({
     async function loadThumbnails() {
       setSlideThumbLoading(true);
       try {
-        const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
-          import.meta.url
-        ).toString();
-        const doc = await pdfjs.getDocument(slides.payload.sourceUrl).promise;
+        const { getDocument, GlobalWorkerOptions, version } = await import("pdfjs-dist");
+
+        if (!GlobalWorkerOptions.workerSrc) {
+          GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version || "4.4.168"}/build/pdf.worker.min.mjs`;
+        }
+
+        const doc = await getDocument(slides.payload.sourceUrl).promise;
         const maxSlides = Math.min(slides.payload.totalSlides, 40);
         const thumbs: string[] = [];
         for (let i = 1; i <= maxSlides; i += 1) {
@@ -1260,14 +1304,51 @@ export function HostConsole({
                       placeholder="Deck title (optional)"
                       value={slideTitle}
                     />
+
+                    <div
+                      className={[
+                        "group mt-4 flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-[24px] border-2 border-dashed transition-all",
+                        isDragging
+                          ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
+                          : "border-black/10 bg-black/3 hover:border-black/20 hover:bg-black/[0.04]"
+                      ].join(" ")}
+                      onDragLeave={handleDragLeave}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                    >
+                      <input
+                        accept="application/pdf"
+                        className="hidden"
+                        id="slide-upload"
+                        onChange={(e) => void handleSlideFile(e.target.files?.[0] ?? null)}
+                        type="file"
+                      />
+                      <label
+                        className="flex w-full flex-col items-center justify-center gap-3 px-6 py-8 text-center"
+                        htmlFor="slide-upload"
+                      >
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5 transition group-hover:scale-110">
+                          <svg className="h-6 w-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">
+                            {isDragging ? "Drop your PDF here" : "Click or drag PDF to upload"}
+                          </p>
+                          <p className="mt-1 text-xs soft-text">Up to 40 slides supported</p>
+                        </div>
+                      </label>
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-3">
+                      <div className="h-px flex-1 bg-black/5" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest soft-text">OR</span>
+                      <div className="h-px flex-1 bg-black/5" />
+                    </div>
+
                     <input
-                      accept="application/pdf"
-                      className="mt-3 block w-full text-sm"
-                      onChange={(e) => void handleSlideFile(e.target.files?.[0] ?? null)}
-                      type="file"
-                    />
-                    <input
-                      className="mt-3 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+                      className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
                       onChange={(e) => {
                         const value = e.target.value;
                         setSlideSourceUrl(value);
@@ -1275,7 +1356,7 @@ export function HostConsole({
                           void resolveSlideCount(value);
                         }
                       }}
-                      placeholder="Or paste a direct PDF URL"
+                      placeholder="Paste a direct PDF URL"
                       value={slideSourceUrl}
                     />
                     <div className="mt-3 flex items-center gap-3">
