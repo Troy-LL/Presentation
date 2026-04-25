@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { SessionSnapshot } from "@interactive-presentation/types";
 
@@ -20,13 +20,40 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nudgeMessage, setNudgeMessage] = useState<string | null>(null);
   const [flashColor, setFlashColor] = useState<string | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Initialize or resume audio context on interaction
+  useEffect(() => {
+    const handleInteraction = () => {
+      if (!audioContextRef.current) {
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioContextClass) {
+          audioContextRef.current = new AudioContextClass();
+        }
+      }
+      if (audioContextRef.current?.state === "suspended") {
+        void audioContextRef.current.resume();
+      }
+    };
+
+    window.addEventListener("click", handleInteraction, { once: true });
+    window.addEventListener("touchstart", handleInteraction, { once: true });
+    return () => {
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("touchstart", handleInteraction);
+    };
+  }, []);
 
   const playNudgeSound = () => {
     try {
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextClass) return;
+      const ctx = audioContextRef.current;
+      if (!ctx) return;
       
-      const ctx = new AudioContextClass();
+      // Ensure it's resumed
+      if (ctx.state === "suspended") {
+        void ctx.resume();
+      }
+      
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       
@@ -34,16 +61,16 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
       gain.connect(ctx.destination);
       
       osc.type = "sine";
-      osc.frequency.setValueAtTime(880, ctx.currentTime); // High pitch "ping"
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
       
       gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.05, ctx.currentTime + 0.02);
+      gain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
       
       osc.start();
       osc.stop(ctx.currentTime + 0.4);
     } catch {
-      // Silent fail if audio is blocked
+      // Silent fail
     }
   };
 
