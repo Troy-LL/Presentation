@@ -51,15 +51,18 @@ export default async function JoinPage({
               </div>
             </div>
 
-            <div className="panel rounded-[24px] p-6">
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] soft-text">
-                Host shortcut
+            <div className="mt-12 border-t border-black/5 pt-8">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] soft-text">
+                Hosting an event?
               </p>
               <Link
-                className="mt-4 inline-flex rounded-full border border-black/10 px-4 py-2 text-sm font-semibold transition hover:bg-black hover:text-white"
+                className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-black"
                 href="/host/new"
               >
                 Start a new session
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
               </Link>
             </div>
           </section>

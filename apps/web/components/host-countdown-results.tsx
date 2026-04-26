@@ -31,7 +31,7 @@ export function HostCountdownResults({ interaction, onClear }: Props) {
   }, [interaction.payload.endsAt, now]);
 
   return (
-    <div className="panel rounded-[28px] p-6 md:p-8">
+    <div className="panel min-h-[600px] rounded-[28px] p-6 md:p-8">
       <p className="text-sm uppercase tracking-[0.22em] soft-text">Countdown</p>
       <h2 className="mt-2 text-xl font-semibold tracking-tight">{interaction.payload.label}</h2>
       <p className="mt-4 text-5xl font-semibold tracking-tight sm:text-6xl">{formatRemaining(remainingSeconds)}</p>

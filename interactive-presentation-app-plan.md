@@ -157,6 +157,7 @@ Chosen for simplicity, low cost, and open-source friendliness.
 - **Real-time client**: `partysocket` (cloud) or native WebSocket (local) — same API surface
 - **PDF Engine**: `pdfjs-dist` (Mozilla) — for client-side PDF-to-Canvas rendering
 - **Animations**: `framer-motion` — for smooth slide transitions
+- **Voice**: Web Speech API (built into Chrome/Edge) — no API key, no cost, no external dependency
 
 ### Backend
 - **HTTP/API**: Next.js API routes (serverless) for session creation
@@ -177,8 +178,10 @@ Those work too, but add vendor lock-in. The stack above is fully self-hostable a
 
 ```ts
 Session {
-  id: string           // e.g. "XK29A"
+  id: string           // e.g. "XK29A" — shared with audience
   hostId: string
+  hostToken: string    // separate secret code for host device auth
+  activeHosts: string[] // connected host device IDs (max 3)
   status: "lobby" | "active" | "closed"
   currentInteraction: Interaction | null
   createdAt: timestamp
@@ -236,11 +239,20 @@ Audience device  ──WebSocket──┼──► PartyKit room / local ws serv
 │   │       ├── interactions/     # One component per interaction type
 │   │       ├── presentation/     # SlideStage, PdfRenderer, SlideControls
 │   │       └── host/             # Host control panel components
+│   │           ├── HostToolbar.tsx          # adaptive side/bottom toolbar
+│   │           ├── HostLayoutShell.tsx      # outer layout shell, aspect-ratio aware
+│   │           ├── MultiDeviceBadge.tsx     # connected host count + host token QR
+│   │           ├── AttentionNudgeButton.tsx # always-present nudge trigger
+│   │           ├── VoiceCommandToggle.tsx   # mic on/off + status indicator
+│   │           └── VoiceCommandEditor.tsx   # phrase assignment within preset editor
 │   └── party/                    # PartyKit server (replaces separate backend)
 │       ├── session.ts            # Session state machine (room logic)
 │       └── interactions/         # Server-side logic per interaction type
 ├── packages/
 │   └── types/                    # Shared TypeScript types (Session, Interaction, etc.)
+├── hooks/
+│   ├── useHostLayout.ts          # aspect ratio + orientation detection
+│   └── useVoiceCommands.ts       # SpeechRecognition wrapper + fuzzy phrase matching
 ├── .env.example                  # NEXT_PUBLIC_MODE=local | cloud
 └── README.md
 ```
@@ -284,11 +296,229 @@ Audience device  ──WebSocket──┼──► PartyKit room / local ws serv
 - [x] Reconnection handling (participant drops Wi-Fi → reconnects seamlessly)
 - [x] Session history (host can review past interactions)
 - [x] Premade Presets (host can save commonly used prompts for one-tap launch)
-- [x] Attention nudge mode (host triggers a "Look at your device now" banner/sound/vibration cue)
 - [x] Basic host analytics (response rates, most popular option, etc.)
 - [x] Browser Fullscreen API integration for Host Dashboard
 
-### Phase 6 — Open Source Release
+#### Persistent Interaction Toolbar (Host)
+
+The tool selector — where the host picks which interaction to launch — must always be reachable in one tap, no matter where the host is on the dashboard. It is never hidden behind a menu or requires scrolling to find.
+
+- [x] **Adaptive toolbar position by device:**
+  - Desktop (landscape, wide viewport): toolbar sits on the **left side**, fixed, full height — icons + labels stacked vertically
+  - Phone (portrait, narrow viewport): toolbar sits on the **bottom**, fixed, full width — icons in a horizontal row
+  - Detection uses CSS container queries + a `useHostLayout` hook that watches `window.innerWidth` and `screen.orientation`
+- [x] **Toolbar contents** (always visible, one tap to launch):
+  - Crowd Prompt
+  - Live Poll
+  - Quiz
+  - Open Text
+  - Emoji Reactions
+  - Countdown
+  - Slide Navigator (if a PDF is loaded)
+  - **Attention Nudge** — included directly in the toolbar as a persistent, always-reachable button; tapping it fires the nudge immediately without entering any other menu
+- [x] Active interaction is highlighted in the toolbar so the host always knows what's live at a glance
+- [x] Toolbar icons use large tap targets (minimum 48×48px) — usable under pressure mid-presentation
+- [x] Toolbar can be collapsed to icon-only mode (no labels) to reclaim screen space, with a toggle at the edge
+
+#### No-Scroll Desktop Dashboard
+
+The host desktop view must fit entirely within one viewport — **no vertical scrolling under any circumstances**. Everything the host needs during a live session is visible at once.
+
+- [x] **Layout zones** (all within 100vh, no overflow):
+  - Left: persistent interaction toolbar (fixed width, ~64–80px collapsed / ~180px expanded)
+  - Center: active interaction panel — poll results, prompt preview, slide stage, etc.
+  - Right: live stats sidebar — participant count, response rate, last action
+  - Top bar: session code + QR code (compact), voice status indicator, fullscreen toggle
+  - No element outside these zones; settings and history accessible via modal/drawer, not inline scroll
+- [x] All panels use `overflow: hidden` or internal scroll (only the results list inside the center panel may scroll independently, not the page itself)
+- [x] Minimum supported desktop resolution: **1280×720** — layout verified at this size with no clipping
+- [x] Dashboard tested at 1280×720, 1440×900, 1920×1080 — no scroll at any breakpoint
+
+### Phase 6 — Host UX & Multi-Device Support
+
+The host experience needs to work just as well on a phone as on a laptop, and should support running the dashboard across multiple devices simultaneously — so a co-host, a second screen, or a backup device can all control the session without conflicts.
+
+#### Host Layout — Aspect Ratio Adaptation
+
+The dashboard detects the host's device orientation and screen shape and switches layout automatically. No separate "mobile site" — same codebase, same components, different arrangement.
+
+- [x] **Aspect ratio detection** via `useHostLayout` hook:
+  - [x] Landscape / wide (≥1024px wide): full desktop layout — side toolbar + center panel + right stats
+  - [x] Portrait / narrow (<768px wide): phone layout — bottom toolbar + stacked panels + top session bar
+  - [x] In-between (768–1023px, tablet landscape): condensed desktop — side toolbar icon-only, no right stats sidebar
+- [x] Orientation change is handled gracefully — layout reflows without losing active interaction state
+- [x] Host can manually lock the layout to a preferred mode via a toggle in settings (overrides auto-detect)
+- [x] All touch targets meet minimum 48×48px on phone layout — tested with one-thumb use in mind
+- [x] Phone layout tested on 390px wide (iPhone SE) as the minimum supported width — no horizontal scroll
+
+#### Phone-Optimized Host Controls
+
+When on a phone, the host dashboard is stripped down to only what's needed mid-session — nothing that requires reading small text or precise tapping.
+
+- [x] **Bottom toolbar** (phone): 6–8 large icon buttons in a scrollable row, Attention Nudge always visible at the far right as a distinct color
+- [x] **Active interaction panel** takes up most of the screen — results bars or prompt text are large and readable at arm's length
+- [x] Swipe up from bottom toolbar to expand a "quick settings" tray (end session, toggle fullscreen, voice on/off) — does not navigate away
+- [x] Session code shown as a small persistent chip at the top — tap to show full QR code as a modal overlay
+- [x] All destructive actions (end session, close interaction) require a 2-tap confirm — accidental taps are easy on phones
+
+#### Multi-Device Host Mode
+
+The host can open the dashboard on 2–3 devices at the same time. All devices see the same state and any one of them can fire an interaction — there is no "primary" device.
+
+- [x] **How it works:**
+  - [x] When a session is created, the host receives a **Host Token** (a separate secret code from the audience invite code)
+  - [x] Any device that joins with the Host Token gets full host privileges — dashboard view, ability to launch interactions, close polls, etc.
+  - [x] All host devices are synced via the same WebSocket room — if one fires a poll, all other host dashboards update to show it as active immediately
+- [x] **Data model additions:**
+  ```ts
+  Session {
+    ...existing fields...
+    hostToken: string        // ← secret, separate from audience invite code
+    activeHosts: string[]    // ← list of connected host device IDs
+  }
+  ```
+- [x] Host Token is shown on the dashboard as a QR code (tap to reveal) — the host can scan it with a second phone to instantly open a second dashboard
+- [x] Maximum 3 simultaneous host devices — enforced server-side to prevent token leaks from becoming a problem
+- [x] If a host device disconnects, others continue unaffected — no single point of failure
+- [x] The audience invite code and host token are visually distinct (different label, different color) so the host never accidentally shares the wrong one
+
+#### Attention Nudge — Full Spec
+
+The Attention Nudge is always one tap away in the toolbar on both desktop and phone. It does not require opening a menu.
+
+- [x] Tapping the nudge button immediately broadcasts to all audience devices:
+  - [x] A full-screen banner overlay: **"👀 Look up!"** (or custom message set by host)
+  - [x] A short vibration pulse on mobile devices that support it (`navigator.vibrate`)
+  - [x] An optional sound chime (host can enable/disable in settings — off by default)
+- [x] Nudge auto-dismisses after 4 seconds, or audience members can tap to dismiss early
+- [x] Host can customize the nudge message per session in settings
+- [x] Nudge cannot be spammed — 8-second cooldown enforced server-side between nudges
+
+#### Project Structure Additions
+
+```
+apps/web/
+└── components/
+    └── host/
+        ├── HostToolbar.tsx          # adaptive side/bottom toolbar, all modes
+        ├── HostLayoutShell.tsx      # outer layout shell, switches on aspect ratio
+        ├── MultiDeviceBadge.tsx     # shows connected host count + host token QR
+        └── AttentionNudgeButton.tsx # always-present nudge trigger with cooldown UI
+hooks/
+└── useHostLayout.ts                 # aspect ratio + orientation detection hook
+```
+
+---
+
+### Phase 7 — Voice Activation
+
+The host can speak a pre-configured trigger phrase and the app will automatically launch the mapped interaction — no tapping required. Voice is always a *shortcut*, never a replacement; every voice command has a tap equivalent on the dashboard.
+
+**How it works:**
+
+The browser's built-in **Web Speech API** (`SpeechRecognition`) runs continuously in the background while the host dashboard is open. It listens for phrases the host has mapped to specific presets or actions. When a match is detected above a confidence threshold, the interaction fires exactly as if the host had tapped the button.
+
+```
+Microphone → SpeechRecognition (browser) → phrase match → dispatch action → WebSocket broadcast → all devices update
+```
+
+- [x] **Voice Engine setup**
+  - [x] Add a "Enable Voice Control" master toggle in the host dashboard settings
+  - [x] Wrap `SpeechRecognition` in a `useVoiceCommands` hook (continuous listening, auto-restart on silence)
+  - [x] Show a live mic indicator on the host dashboard (green dot = listening, red = paused/error)
+  - [x] Graceful fallback UI for Firefox/Safari with a clear "Voice commands require Chrome or Edge" notice
+  - [x] Request mic permission on first enable; remember preference in `localStorage`
+
+- [x] **Phrase-to-action mapping**
+  - [x] Host can assign a trigger phrase to any saved Preset (e.g. "let's vote" → launch Poll A)
+  - [x] Built-in global commands that always work regardless of presets:
+
+    | Say | Action |
+    |---|---|
+    | "next slide" | Advance to next slide |
+    | "go back" / "previous slide" | Go to previous slide |
+    | "end poll" / "close it" | Close the active interaction |
+    | "start timer" | Launch countdown (uses last-set duration) |
+    | "back to lobby" | Return audience to blank screen |
+
+  - [x] Phrases are fuzzy-matched (not exact string) — "let's do a vote" still triggers "let's vote"
+  - [x] Minimum confidence threshold (default 0.80) — configurable per host session
+
+- [x] **Preset integration**
+  - [x] Voice trigger field added to the Preset editor UI ("When I say...")
+  - [x] Phrase map stored alongside presets in `localStorage` (localhost) or PartyKit room storage (cloud)
+  - [x] Visual confirmation on match: the triggered preset card briefly highlights on the host dashboard
+
+- [x] **Noise & false positive handling**
+  - [x] Debounce: same command cannot re-fire within 3 seconds of last trigger
+  - [x] Push-to-listen mode (optional): host holds Spacebar to activate listening instead of continuous mic — useful in loud rooms
+  - [x] Host can mute/unmute voice listening with a single toggle without leaving the dashboard
+
+- [x] **Data model additions**
+
+  ```ts
+  Preset {
+    id: string
+    label: string
+    interactionType: InteractionType
+    payload: object
+    voiceTrigger?: string      // ← new: phrase that launches this preset
+    triggerConfidence?: number // ← new: match threshold (0.0–1.0, default 0.80)
+  }
+
+  VoiceSession {
+    enabled: boolean
+    mode: "continuous" | "push-to-listen"
+    globalCommands: boolean    // toggle built-in slide/lobby commands
+    lastTriggeredAt: timestamp | null
+  }
+  ```
+
+- [x] **Project structure additions**
+
+  ```
+  apps/web/
+  └── components/
+      └── host/
+          ├── VoiceCommandToggle.tsx   # mic on/off button + status indicator
+          └── VoiceCommandEditor.tsx   # phrase assignment UI within preset editor
+  hooks/
+  └── useVoiceCommands.ts             # core SpeechRecognition wrapper + fuzzy match logic
+  ```
+
+- [ ] **Touch-ups & UX Polishing**
+  - [ ] Add active/pressed states to all dashboard and audience buttons for tactile feedback
+  - [ ] Redesign landing page (`/`) to clearly offer two paths: "Host a Session" and "Join a Session"
+  - [ ] Make the "Host shortcut" on the join page more subtle to keep focus on joining
+  - [ ] Add subtle hover transitions to all interactive cards and panels
+  - [ ] **Host Layout Switching:** Add a simple layout toggle button in the host sidebar (desktop) or toolbar (mobile).
+    - [ ] **Desktop:** Switch between **Standard** (side toolbar + full right panel) and **Compact** (icon-only side toolbar, right panel hidden).
+    - [ ] **Mobile:** Switch between **Standard** (bottom toolbar + full content) and **Heads-Up** (bottom toolbar only, interaction title large, no clutter).
+    - [ ] Layout choice is saved in `localStorage` per session.
+  - [ ] **Phone Quick Settings:** In mobile view, swipe up on the bottom toolbar to expand a compact tray showing:
+    - [ ] End Session (2-tap confirm)
+    - [ ] Toggle Fullscreen 
+    - [ ] Toggle Voice Control
+    - [ ] Slide Settings (current slide + navigator)
+    - [ ] This tray slides up over the bottom ~30% of the screen and can be swiped back down.
+  - [ ] **Icon SVGs:** All icons must be SVGs.
+  
+
+**Browser support reality check:**
+
+| Browser | Support |
+|---|---|
+| Chrome / Edge | ✅ Full support |
+| Safari (macOS 14+) | ⚠️ Partial — works but less reliable |
+| Firefox | ❌ Not supported — show fallback notice |
+| Mobile Chrome (Android) | ✅ Works |
+| Mobile Safari (iOS) | ⚠️ Works only when page is in foreground |
+
+Voice activation is opt-in and off by default. The host dashboard works identically without it.
+
+---
+
+### Phase 8 — Open Source Release
 - [x] Release docs pass
   - [x] Clean README with architecture overview and project purpose
   - [x] Document both deployment targets: localhost mode and cloud mode
@@ -311,7 +541,7 @@ Audience device  ──WebSocket──┼──► PartyKit room / local ws serv
   - [x] Add code style and testing expectations
   - [x] Add a minimal issue/PR checklist for contributors
 
-### Phase 6 — Release Done Criteria
+### Phase 8 — Release Done Criteria
 - [x] A fresh clone can be started locally using the README alone
 - [x] Cloud deployment instructions work without external platform ambiguity
 - [x] Docker Compose starts the full stack without undocumented manual steps

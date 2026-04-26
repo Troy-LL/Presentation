@@ -59,13 +59,59 @@ textarea {
 .accent-button {
   background: linear-gradient(135deg, var(--accent) 0%, #ffb347 100%);
   color: #1d1206;
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 28%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 22%, transparent);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .accent-button:hover {
-  filter: brightness(1.02);
+  filter: brightness(1.03);
+  transform: translateY(-1px);
+}
+
+.accent-button:active {
+  transform: scale(0.96) translateY(0);
+  filter: brightness(0.95);
 }
 
 .ghost-button {
   background: rgba(255, 255, 255, 0.65);
+  border: 1px solid color-mix(in srgb, #000 10%, transparent);
+  color: var(--text-main);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+.ghost-button:hover {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: color-mix(in srgb, #000 18%, transparent);
+}
+
+.ghost-button:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.danger-button {
+  background: rgba(180, 35, 24, 0.08);
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
+  color: var(--danger);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.danger-button:hover {
+  background: rgba(180, 35, 24, 0.14);
+  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
+}
+
+.danger-button:active {
+  transform: scale(0.98);
+}
+
+.status-chip {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid color-mix(in srgb, #000 10%, transparent);
+  color: var(--text-main);
+  box-shadow: 0 6px 22px rgba(18, 24, 38, 0.08);
+}
+
 

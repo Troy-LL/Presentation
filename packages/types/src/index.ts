@@ -1,5 +1,21 @@
 export type SessionStatus = "lobby" | "active" | "closed";
 
+export type VoiceListeningMode = "continuous" | "push-to-listen";
+
+export type HostPreset = {
+  id: string;
+  text: string;
+  voiceTrigger?: string;
+  triggerConfidence?: number;
+};
+
+export type VoiceSessionState = {
+  enabled: boolean;
+  mode: VoiceListeningMode;
+  globalCommands: boolean;
+  lastTriggeredAt: string | null;
+};
+
 export type InteractionType =
   | "prompt"
   | "poll"
@@ -143,6 +159,7 @@ export type SessionSnapshot = {
   status: SessionStatus;
   currentInteraction: CurrentInteraction;
   participantCount: number;
+  activeHosts: number;
   createdAt: string;
 };
 
@@ -264,6 +281,16 @@ export type ClientMessage =
   | {
       type: "client.close_session";
       hostToken: string;
+    }
+  | {
+      type: "client.update_host_presets";
+      hostToken: string;
+      presets: HostPreset[];
+    }
+  | {
+      type: "client.update_voice_session";
+      hostToken: string;
+      voiceSession: VoiceSessionState;
     };
 
 // ─── Server → Client ─────────────────────────────────────────────────────────
@@ -331,5 +358,13 @@ export type ServerMessage =
   | {
       type: "server.error";
       message: string;
+    }
+  | {
+      type: "server.host_presets_updated";
+      presets: HostPreset[];
+    }
+  | {
+      type: "server.voice_session_updated";
+      voiceSession: VoiceSessionState;
     };
 

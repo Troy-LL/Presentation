@@ -4,16 +4,25 @@ import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
-import type { SessionHistoryEntry, SessionSnapshot } from "@interactive-presentation/types";
+import type {
+  HostPreset,
+  SessionHistoryEntry,
+  SessionSnapshot,
+  VoiceListeningMode
+} from "@interactive-presentation/types";
 
 import { HostPollResults } from "@/components/host-poll-results";
 import { HostCountdownResults } from "@/components/host-countdown-results";
 import { HostOpenTextResults } from "@/components/host-open-text-results";
 import { HostReactionResults } from "@/components/host-reaction-results";
 import { HostQuizResults } from "@/components/host-quiz-results";
+import { VoiceCommandToggle } from "@/components/host/voice-command-toggle";
+import { HostLayoutShell } from "@/components/host/host-layout-shell";
+import { HostToolbar, Mode } from "@/components/host/host-toolbar";
+import { MultiDeviceBadge } from "@/components/host/multi-device-badge";
 import { useSessionConnection } from "@/lib/use-session-connection";
-
-type Mode = "prompt" | "poll" | "quiz" | "reactions" | "open_text" | "countdown" | "slides";
+import { useVoiceCommands } from "@/lib/use-voice-commands";
+import { useHostLayout } from "@/hooks/use-host-layout";
 type SlideTrigger =
   | {
       type: "prompt";
@@ -29,19 +38,19 @@ const EMPTY_OPTIONS = ["", "", ""];
 
 function statLabel(value: string, label: string) {
   return (
-    <div className="rounded-[22px] border border-black/8 bg-white/80 p-5">
+    <div className="flex h-full flex-col overflow-hidden rounded-[22px] border border-black/8 bg-white/80 p-5">
       <p className="text-xs uppercase tracking-[0.18em] soft-text">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
+      <p className="mt-2 truncate text-2xl font-semibold tracking-tight" title={value}>{value}</p>
     </div>
   );
 }
 
 function analyticsCard(label: string, value: string, hint: string) {
   return (
-    <div className="rounded-[20px] border border-black/8 bg-white/80 p-4">
+    <div className="flex h-full flex-col overflow-hidden rounded-[20px] border border-black/8 bg-white/80 p-4">
       <p className="text-[11px] uppercase tracking-[0.18em] soft-text">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
-      <p className="mt-1 text-xs soft-text">{hint}</p>
+      <p className="mt-2 truncate text-2xl font-semibold tracking-tight" title={value}>{value}</p>
+      <p className="mt-1 truncate text-xs soft-text" title={hint}>{hint}</p>
     </div>
   );
 }
@@ -159,12 +168,17 @@ export function HostConsole({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
-  // ── Mode switcher ────────────────────────────────────────────────────────
+  // ── Mode switcher & Layout ───────────────────────────────────────────────
   const [mode, setMode] = useState<Mode>("prompt");
+  const layoutMode = useHostLayout();
 
   // ── Prompt state ─────────────────────────────────────────────────────────
   const [draft, setDraft] = useState("");
-  const [presets, setPresets] = useState<string[]>([]);
+  const [presets, setPresets] = useState<HostPreset[]>([]);
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+  const [editingVoiceTrigger, setEditingVoiceTrigger] = useState("");
+  const [editingTriggerConfidence, setEditingTriggerConfidence] = useState(0.75);
+  const [highlightedPresetId, setHighlightedPresetId] = useState<string | null>(null);
 
   // ── Poll state ───────────────────────────────────────────────────────────
   const [pollQuestion, setPollQuestion] = useState("");
@@ -215,25 +229,90 @@ export function HostConsole({
     lastTriggeredSlideRef.current = null;
   };
 
+  // ── Voice Activation state ───────────────────────────────────────────────
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceConfidence, setVoiceConfidence] = useState(0.75);
+  const [voiceMode, setVoiceMode] = useState<VoiceListeningMode>("continuous");
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const [voiceGlobalCommands] = useState(true);
+  const [lastVoiceTriggeredAt, setLastVoiceTriggeredAt] = useState<string | null>(null);
+  const isCloudMode = process.env.NEXT_PUBLIC_MODE === "cloud";
+
   // ── Presets persistence ──────────────────────────────────────────────────
   useEffect(() => {
-    const saved = localStorage.getItem("host-presets");
-    if (saved) {
-      try { setPresets(JSON.parse(saved)); } catch { /* ignore */ }
+    if (!isCloudMode) {
+      const savedPresets = localStorage.getItem("host-presets-v2");
+      if (savedPresets) {
+        try { setPresets(JSON.parse(savedPresets)); } catch { /* ignore */ }
+      }
     }
-  }, []);
 
-  const savePreset = () => {
-    if (!draft.trim() || presets.includes(draft.trim())) return;
-    const next = [draft.trim(), ...presets];
+    const savedVoice = localStorage.getItem("host-voice-enabled");
+    if (savedVoice === "true") setVoiceEnabled(true);
+
+    const savedConf = localStorage.getItem("host-voice-confidence");
+    if (savedConf) setVoiceConfidence(parseFloat(savedConf));
+    const savedMode = localStorage.getItem("host-voice-mode");
+    if (savedMode === "continuous" || savedMode === "push-to-listen") {
+      setVoiceMode(savedMode);
+    }
+
+    const savedMuted = localStorage.getItem("host-voice-muted");
+    if (savedMuted === "true") setVoiceMuted(true);
+  }, [isCloudMode]);
+
+  useEffect(() => {
+    localStorage.setItem("host-voice-enabled", String(voiceEnabled));
+  }, [voiceEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("host-voice-confidence", String(voiceConfidence));
+  }, [voiceConfidence]);
+
+  useEffect(() => {
+    localStorage.setItem("host-voice-mode", voiceMode);
+  }, [voiceMode]);
+
+  useEffect(() => {
+    localStorage.setItem("host-voice-muted", String(voiceMuted));
+  }, [voiceMuted]);
+
+  const persistPresets = (next: HostPreset[]) => {
     setPresets(next);
-    localStorage.setItem("host-presets", JSON.stringify(next));
+    if (isCloudMode) {
+      updateHostPresets(next);
+      return;
+    }
+    localStorage.setItem("host-presets-v2", JSON.stringify(next));
   };
 
-  const deletePreset = (text: string) => {
-    const next = presets.filter((p) => p !== text);
-    setPresets(next);
-    localStorage.setItem("host-presets", JSON.stringify(next));
+  const savePreset = () => {
+    if (!draft.trim()) return;
+    if (presets.some((p) => p.text === draft.trim())) return;
+    const next: HostPreset[] = [{ id: crypto.randomUUID(), text: draft.trim() }, ...presets];
+    persistPresets(next);
+  };
+
+  const deletePreset = (id: string) => {
+    const next = presets.filter((p) => p.id !== id);
+    persistPresets(next);
+  };
+
+  const updatePresetVoiceTrigger = (id: string, trigger: string, triggerConfidence?: number) => {
+    const next = presets.map((p) =>
+      p.id === id
+        ? {
+            ...p,
+            voiceTrigger: trigger.trim() || undefined,
+            triggerConfidence: trigger.trim()
+              ? (Number.isFinite(triggerConfidence)
+                ? Math.min(1, Math.max(0.5, triggerConfidence as number))
+                : p.triggerConfidence)
+              : undefined
+          }
+        : p
+    );
+    persistPresets(next);
   };
 
   // ── Token resolution ─────────────────────────────────────────────────────
@@ -280,6 +359,8 @@ export function HostConsole({
     connectionState,
     error,
     latestReactionEmoji,
+    hostPresets: cloudHostPresets,
+    voiceSession: cloudVoiceSession,
     startPrompt,
     startPoll,
     startQuiz,
@@ -294,13 +375,121 @@ export function HostConsole({
     revealPollResults,
     revealQuizAnswer,
     clearInteraction,
-    closeSession
+    closeSession,
+    updateHostPresets,
+    updateVoiceSession
   } = useSessionConnection({
     sessionCode,
     role: "host",
     hostToken,
     initialSnapshot,
     enabled: Boolean(hostToken && initialSnapshot)
+  });
+
+  useEffect(() => {
+    if (!isCloudMode) return;
+    setPresets(cloudHostPresets);
+  }, [isCloudMode, cloudHostPresets]);
+
+  useEffect(() => {
+    if (!isCloudMode || !cloudVoiceSession) return;
+    setVoiceEnabled(cloudVoiceSession.enabled);
+    setVoiceMode(cloudVoiceSession.mode);
+  }, [isCloudMode, cloudVoiceSession]);
+
+  useEffect(() => {
+    if (!isCloudMode) return;
+    updateVoiceSession({
+      enabled: voiceEnabled,
+      mode: voiceMode,
+      globalCommands: voiceGlobalCommands,
+      lastTriggeredAt: lastVoiceTriggeredAt
+    });
+  }, [
+    isCloudMode,
+    voiceEnabled,
+    voiceMode,
+    voiceGlobalCommands,
+    lastVoiceTriggeredAt,
+    updateVoiceSession
+  ]);
+
+  // ── Voice Commands ───────────────────────────────────────────────────────
+  const voiceCommands = useMemo(() => {
+    // Built-in global commands
+    const globals = [
+      {
+        id: "global:next_slide",
+        phrases: ["next slide", "advance", "next"],
+        action: nextSlide,
+      },
+      {
+        id: "global:prev_slide",
+        phrases: ["go back", "previous slide", "previous", "back"],
+        action: prevSlide,
+      },
+      {
+        id: "global:end_interaction",
+        phrases: ["end poll", "close it", "stop poll", "stop quiz", "end quiz"],
+        action: clearInteraction,
+      },
+      {
+        id: "global:start_timer",
+        phrases: ["start timer", "launch timer", "go timer"],
+        action: () => startCountdown(countdownLabel, countdownSeconds),
+      },
+      {
+        id: "global:back_to_lobby",
+        phrases: ["back to lobby", "clear screen", "go to lobby"],
+        action: clearInteraction,
+      },
+    ];
+
+    // Per-preset voice triggers
+    const presetCommands = presets
+      .filter((p) => p.voiceTrigger?.trim())
+      .map((p) => ({
+        id: `preset:${p.id}`,
+        phrases: [p.voiceTrigger!.trim()],
+        action: () => startPrompt(p.text),
+        confidence: p.triggerConfidence,
+      }));
+
+    return voiceGlobalCommands ? [...presetCommands, ...globals] : presetCommands;
+  }, [
+    nextSlide,
+    prevSlide,
+    clearInteraction,
+    startCountdown,
+    startPrompt,
+    countdownLabel,
+    countdownSeconds,
+    presets,
+    voiceGlobalCommands
+  ]);
+
+  const {
+    isListening,
+    isSupported: voiceSupported,
+    lastMatchedPhrase,
+    isPushToListenActive
+  } = useVoiceCommands({
+    enabled: voiceEnabled && !voiceMuted && snapshot?.status !== "closed",
+    mode: voiceMode,
+    commands: voiceCommands,
+    minConfidence: voiceConfidence,
+    onMatch: (_, commandId) => {
+      const now = new Date().toISOString();
+      setLastVoiceTriggeredAt(now);
+
+      if (commandId?.startsWith("preset:")) {
+        const presetId = commandId.replace("preset:", "");
+        setHighlightedPresetId(presetId);
+        window.setTimeout(() => {
+          setHighlightedPresetId((current) => (current === presetId ? null : current));
+        }, 1500);
+      }
+    }
   });
 
   // ── Prompt before closing ────────────────────────────────────────────────
@@ -646,66 +835,98 @@ export function HostConsole({
     );
   }
 
-  return (
-    <main className="app-shell px-4 py-5 sm:px-6 md:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        {/* Header */}
-        <header className="panel rounded-[28px] p-5 sm:p-6 md:p-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.24em] soft-text">Live host dashboard</p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl md:text-5xl">
-                Session {sessionCode}
-              </h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 soft-text">
-                Launch crowd prompts or live polls, watch the room respond in real time, and clear back to lobby when the moment is done.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full border border-black/10 bg-white/80 px-4 py-2 text-sm font-semibold">
-                {connectionState === "connected" ? "Connected live" : "Connecting…"}
-              </span>
-              <button
-                className="ghost-button inline-flex rounded-full border border-black/10 px-4 py-2 text-sm font-semibold transition hover:bg-white"
-                onClick={() => void toggleFullscreen()}
-                type="button"
-              >
-                {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-              </button>
-              <button
-                className="accent-button inline-flex rounded-full px-4 py-2 text-sm font-semibold"
-                onClick={() => sendAttentionNudge("Look at your device now")}
-                type="button"
-              >
-                Attention nudge
-              </button>
-              <a
-                className="ghost-button inline-flex rounded-full border border-black/10 px-4 py-2 text-sm font-semibold transition hover:bg-white"
-                href={joinUrl || `/join?code=${sessionCode}`}
-                target="_blank"
-              >
-                Open join screen
-              </a>
-            </div>
+  const header = (
+    <header className="panel relative flex flex-col gap-4 rounded-3xl p-5 md:flex-row md:items-center md:justify-between shrink-0">
+      <div className="flex items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Session {sessionCode}</h1>
+          <div className="mt-1 flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${connectionState === "connected" ? "bg-[var(--success)]" : "bg-amber-400"}`} />
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              {connectionState === "connected" ? "Live" : "Connecting..."}
+            </span>
           </div>
-          {fullscreenError && <p className="mt-4 text-sm text-[var(--danger)]">{fullscreenError}</p>}
-        </header>
+        </div>
+      </div>
+      
+      <div className="flex flex-wrap items-center gap-3">
+        {hostToken && (
+          <MultiDeviceBadge 
+            activeHosts={snapshot?.activeHosts ?? 1} 
+            hostToken={hostToken} 
+          />
+        )}
+        <button
+          className="ghost-button inline-flex rounded-full px-4 py-2 text-sm font-semibold"
+          onClick={() => void toggleFullscreen()}
+          type="button"
+        >
+          {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+        </button>
+        <VoiceCommandToggle
+          confidence={voiceConfidence}
+          enabled={voiceEnabled}
+          isListening={isListening}
+          isPushToListenActive={isPushToListenActive}
+          isSupported={voiceSupported}
+          lastMatchedPhrase={lastMatchedPhrase}
+          mode={voiceMode}
+          onConfidenceChange={setVoiceConfidence}
+          onModeChange={setVoiceMode}
+          onMutedChange={setVoiceMuted}
+          onToggle={setVoiceEnabled}
+          muted={voiceMuted}
+        />
+      </div>
+      {fullscreenError && <p className="absolute bottom-2 left-5 text-xs text-[var(--danger)]">{fullscreenError}</p>}
+    </header>
+  );
 
-        <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="grid gap-6">
-            {/* Stats row */}
-            <div className="grid gap-4 md:grid-cols-3">
-              {statLabel(sessionCode, "Invite code")}
-              {statLabel(String(snapshot.participantCount), "Audience connected")}
-              {statLabel(roomStateLabel, "Room state")}
-            </div>
+  const toolbar = (
+    <HostToolbar 
+      mode={mode} 
+      setMode={setMode} 
+      onNudge={(msg) => sendAttentionNudge(msg)} 
+      layout={layoutMode} 
+    />
+  );
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {analyticsCard("Responses", analytics.totalResponses, "Live for active interaction")}
-              {analyticsCard("Participation", analytics.participationRate, "Response rate vs connected audience")}
-              {analyticsCard("Top signal", analytics.topSignal.length > 34 ? `${analytics.topSignal.slice(0, 34)}...` : analytics.topSignal, "Most selected/used right now")}
-              {analyticsCard("Engagement", analytics.engagement, "Quick activity snapshot")}
-            </div>
+  const sidebar = (
+    <>
+      <div className="grid gap-4 shrink-0">
+        {statLabel(sessionCode, "Invite code")}
+        {statLabel(String(snapshot.participantCount), "Audience connected")}
+        {statLabel(roomStateLabel, "Room state")}
+      </div>
+      <div className="grid gap-3 shrink-0">
+        {analyticsCard("Responses", analytics.totalResponses, "Live for active interaction")}
+        {analyticsCard("Participation", analytics.participationRate, "Response rate vs connected audience")}
+        {analyticsCard("Top signal", analytics.topSignal.length > 34 ? `${analytics.topSignal.slice(0, 34)}...` : analytics.topSignal, "Most selected/used right now")}
+        {analyticsCard("Engagement", analytics.engagement, "Quick activity snapshot")}
+      </div>
+      <div className="panel rounded-[28px] p-6 md:p-8 mt-auto shrink-0">
+        <p className="text-sm uppercase tracking-[0.22em] soft-text text-center">Join link</p>
+        <div className="mt-5 flex flex-col items-center gap-5">
+          <div className="rounded-2xl bg-white p-3 shadow-sm border border-black/5">
+            <QRCodeSVG bgColor="#ffffff" fgColor="#111827" size={140} value={joinUrl || `https://example.com/join?code=${sessionCode}`} />
+          </div>
+          <p className="break-all text-xs font-mono text-slate-500 text-center px-4">
+            {joinUrl || `/join?code=${sessionCode}`}
+          </p>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <HostLayoutShell
+      layout={layoutMode}
+      toolbar={toolbar}
+      header={header}
+      sidebar={sidebar}
+      content={
+        <div className="flex flex-col gap-6 w-full xl:flex-row min-w-0">
+          <div className="flex flex-col gap-6 flex-1 min-w-0">
 
             {/* Active poll live view replaces the control panel */}
             {activePoll ? (
@@ -731,7 +952,8 @@ export function HostConsole({
             ) : activeCountdown ? (
               <HostCountdownResults interaction={activeCountdown} onClear={clearInteraction} />
             ) : activeSlides ? (
-              <div className="panel rounded-[28px] p-6 md:p-8">
+              <div className="panel flex min-h-[600px] flex-col rounded-[28px] p-6 md:p-8">
+                <div className="flex-1 min-w-0">
                 <p className="text-sm uppercase tracking-[0.22em] soft-text">Slides live</p>
                 <h2 className="mt-2 text-xl font-semibold tracking-tight">
                   {activeSlides.payload.title ?? "Presentation"}
@@ -741,7 +963,7 @@ export function HostConsole({
                 </p>
                 <div className="mt-6 flex flex-wrap items-center gap-3">
                   <button
-                    className="ghost-button inline-flex h-10 items-center justify-center rounded-full border border-black/10 px-5 text-sm font-semibold transition hover:bg-white"
+                    className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-5 text-sm font-semibold"
                     onClick={prevSlide}
                     type="button"
                   >
@@ -762,7 +984,7 @@ export function HostConsole({
                     value={slideJumpIndex}
                   />
                   <button
-                    className="ghost-button inline-flex h-10 items-center justify-center rounded-full border border-black/10 px-4 text-sm font-semibold transition hover:bg-white"
+                    className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
                     onClick={() => setSlide(Math.max(0, Math.min(activeSlides.payload.totalSlides - 1, slideJumpIndex - 1)))}
                     type="button"
                   >
@@ -856,7 +1078,7 @@ export function HostConsole({
                       </>
                     )}
                     <button
-                      className="ghost-button inline-flex h-10 items-center justify-center rounded-full border border-black/10 px-4 text-sm font-semibold transition hover:bg-white"
+                        className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
                       onClick={() => {
                         const idx = Math.max(0, triggerSlideIndex - 1);
                         if (triggerType === "prompt") {
@@ -893,7 +1115,7 @@ export function HostConsole({
                       Map interaction
                     </button>
                     <button
-                      className="ghost-button inline-flex h-10 items-center justify-center rounded-full border border-black/10 px-4 text-sm font-semibold transition hover:bg-white"
+                      className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
                       onClick={() => {
                         const idx = Math.max(0, triggerSlideIndex - 1);
                         setSlideTriggers((current) => {
@@ -939,9 +1161,10 @@ export function HostConsole({
                     })}
                   </div>
                 </div>
+              </div>
                 <div className="mt-6 border-t border-black/5 pt-6">
                   <button
-                    className="ghost-button inline-flex h-10 items-center justify-center rounded-full border border-black/10 px-5 text-sm font-semibold transition hover:bg-white"
+                    className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-5 text-sm font-semibold"
                     onClick={() => {
                       resetSlideLocalState();
                       clearInteraction();
@@ -953,37 +1176,9 @@ export function HostConsole({
                 </div>
               </div>
             ) : (
-              <div className="panel rounded-[28px] p-6 md:p-8">
-                {/* Mode tabs */}
-                <div className="flex w-full gap-1 overflow-x-auto rounded-2xl border border-black/8 bg-black/3 p-1 sm:w-fit">
-                  {(["prompt", "poll", "quiz", "reactions", "open_text", "countdown", "slides"] as Mode[]).map((m) => (
-                    <button
-                      className={[
-                        "whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition",
-                        mode === m
-                          ? "bg-white shadow-sm"
-                          : "text-slate-500 hover:text-slate-800"
-                      ].join(" ")}
-                      key={m}
-                      onClick={() => setMode(m)}
-                      type="button"
-                    >
-                      {m === "prompt"
-                        ? "Crowd Prompt"
-                        : m === "poll"
-                          ? "Live Poll"
-                          : m === "quiz"
-                            ? "Quiz"
-                            : m === "reactions"
-                              ? "Reactions"
-                              : m === "open_text"
-                                ? "Open text"
-                                : m === "countdown"
-                                  ? "Countdown"
-                                  : "Slides"}
-                    </button>
-                  ))}
-                </div>
+              <div className="panel flex min-h-[600px] flex-col rounded-[28px] p-6 md:p-8">
+                <div className="flex-1 min-w-0">
+
 
                 {/* ── Prompt mode ── */}
                 {mode === "prompt" && (
@@ -1007,7 +1202,7 @@ export function HostConsole({
                       </button>
                       {isActive && activePrompt && (
                         <button
-                          className="ghost-button inline-flex h-11 items-center justify-center rounded-full border border-black/10 px-5 text-sm font-semibold transition hover:bg-white"
+                          className="ghost-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold"
                           onClick={clearInteraction}
                           type="button"
                         >
@@ -1015,7 +1210,7 @@ export function HostConsole({
                         </button>
                       )}
                       <button
-                        className="ghost-button inline-flex h-11 items-center justify-center rounded-full border border-black/10 px-5 text-sm font-semibold transition hover:bg-white"
+                        className="ghost-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold"
                         disabled={!draft.trim()}
                         onClick={savePreset}
                         title="Save this text for future use"
@@ -1032,27 +1227,106 @@ export function HostConsole({
                         <div className="mt-3 flex flex-wrap gap-2">
                           {presets.map((preset) => (
                             <div
-                              className="group flex items-center overflow-hidden rounded-full border border-black/10 bg-white shadow-sm"
-                              key={preset}
+                              className={[
+                                "group flex flex-col overflow-hidden rounded-[20px] border bg-white shadow-sm transition-all duration-300",
+                                highlightedPresetId === preset.id
+                                  ? "border-[var(--accent)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_22%,transparent)]"
+                                  : "border-black/10"
+                              ].join(" ")}
+                              key={preset.id}
                             >
-                              <button
-                                className="px-4 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50"
-                                disabled={isClosed}
-                                onClick={() => { setDraft(preset); startPrompt(preset); }}
-                                type="button"
-                              >
-                                {preset.length > 30 ? `${preset.substring(0, 30)}…` : preset}
-                              </button>
-                              <button
-                                className="flex h-full items-center border-l border-black/10 bg-slate-50 px-3 text-slate-400 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
-                                onClick={() => deletePreset(preset)}
-                                title="Delete preset"
-                                type="button"
-                              >
-                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
-                                </svg>
-                              </button>
+                              <div className="flex items-center">
+                                <button
+                                  className="flex-1 px-4 py-2.5 text-left text-sm font-medium text-slate-800 transition hover:bg-slate-50"
+                                  disabled={isClosed}
+                                  onClick={() => { setDraft(preset.text); startPrompt(preset.text); }}
+                                  type="button"
+                                >
+                                  {preset.text.length > 30 ? `${preset.text.substring(0, 30)}…` : preset.text}
+                                </button>
+                                {/* Voice trigger badge */}
+                                {preset.voiceTrigger && (
+                                  <span className="mr-2 flex items-center gap-1 rounded-full bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]">
+                                    <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /></svg>
+                                    {preset.voiceTrigger}
+                                  </span>
+                                )}
+                                {/* Edit trigger toggle */}
+                                <button
+                                  className="flex h-full items-center border-l border-black/10 px-3 text-slate-400 opacity-0 transition hover:bg-slate-50 hover:text-slate-700 group-hover:opacity-100"
+                                  onClick={() => {
+                                    if (editingPresetId === preset.id) {
+                                      setEditingPresetId(null);
+                                    } else {
+                                      setEditingPresetId(preset.id);
+                                      setEditingVoiceTrigger(preset.voiceTrigger ?? "");
+                                      setEditingTriggerConfidence(preset.triggerConfidence ?? voiceConfidence);
+                                    }
+                                  }}
+                                  title="Set voice trigger"
+                                  type="button"
+                                >
+                                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /></svg>
+                                </button>
+                                <button
+                                  className="flex h-full items-center border-l border-black/10 bg-slate-50 px-3 text-slate-400 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                                  onClick={() => deletePreset(preset.id)}
+                                  title="Delete preset"
+                                  type="button"
+                                >
+                                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+                                  </svg>
+                                </button>
+                              </div>
+                              {/* Voice trigger editor — expands on mic icon click */}
+                              {editingPresetId === preset.id && (
+                                <div className="border-t border-black/5 px-4 py-3">
+                                  <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest soft-text">When I say…</p>
+                                  <div className="flex gap-2">
+                                    <input
+                                      autoFocus
+                                      className="flex-1 rounded-full border border-black/10 bg-white/80 px-3 py-1.5 text-sm outline-none focus:border-[var(--accent)]"
+                                      onChange={(e) => setEditingVoiceTrigger(e.target.value)}
+                                      placeholder="e.g. let's vote"
+                                      type="text"
+                                      value={editingVoiceTrigger}
+                                    />
+                                    <input
+                                      aria-label="Trigger confidence"
+                                      className="w-24 rounded-full border border-black/10 bg-white/80 px-3 py-1.5 text-xs outline-none focus:border-[var(--accent)]"
+                                      max={1}
+                                      min={0.5}
+                                      onChange={(e) => setEditingTriggerConfidence(Number(e.target.value))}
+                                      step={0.05}
+                                      type="number"
+                                      value={editingTriggerConfidence}
+                                    />
+                                    <button
+                                      className="accent-button rounded-full px-4 py-1.5 text-xs font-semibold"
+                                      onClick={() => {
+                                        updatePresetVoiceTrigger(preset.id, editingVoiceTrigger, editingTriggerConfidence);
+                                        setEditingPresetId(null);
+                                      }}
+                                      type="button"
+                                    >
+                                      Save
+                                    </button>
+                                    {preset.voiceTrigger && (
+                                      <button
+                                        className="ghost-button rounded-full px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-500"
+                                        onClick={() => {
+                                          updatePresetVoiceTrigger(preset.id, "");
+                                          setEditingPresetId(null);
+                                        }}
+                                        type="button"
+                                      >
+                                        Remove
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1262,7 +1536,7 @@ export function HostConsole({
                     <div className="mt-3 flex flex-wrap gap-2">
                       {[10, 30, 60, 120].map((seconds) => (
                         <button
-                          className="ghost-button inline-flex h-10 items-center justify-center rounded-full border border-black/10 px-4 text-sm font-semibold transition hover:bg-white"
+                          className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
                           key={seconds}
                           onClick={() => setCountdownSeconds(seconds)}
                           type="button"
@@ -1388,11 +1662,12 @@ export function HostConsole({
                     </div>
                   </div>
                 )}
+              </div>
 
-                {/* Danger zone */}
+              {/* Danger zone */}
                 <div className="mt-8 border-t border-black/10 pt-6">
                   <button
-                    className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold text-[var(--danger)] transition hover:bg-red-50"
+                    className="danger-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
                     disabled={isClosed}
                     onClick={() => {
                       if (confirm("Are you sure you want to end this session for everyone?")) {
@@ -1409,32 +1684,10 @@ export function HostConsole({
               </div>
             )}
           </div>
-
-          {/* Right column */}
-          <div className="grid gap-6">
-            {/* QR / Join link */}
-            <div className="panel rounded-[28px] p-6 md:p-8">
-              <p className="text-sm uppercase tracking-[0.22em] soft-text">Join link</p>
-              <div className="mt-5 flex flex-col items-center gap-5 rounded-[24px] border border-black/8 bg-white/85 p-6 text-center">
-                <QRCodeSVG
-                  bgColor="#ffffff"
-                  fgColor="#111827"
-                  includeMargin
-                  size={192}
-                  value={joinUrl || `https://example.com/join?code=${sessionCode}`}
-                />
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] soft-text">Audience URL</p>
-                  <p className="mt-2 break-all text-sm text-slate-700">
-                    {joinUrl || `/join?code=${sessionCode}`}
-                  </p>
-                </div>
-              </div>
-            </div>
-
+          <div className="flex flex-col gap-6 flex-1 min-w-0">
             {/* Current output preview */}
-            <div className="panel rounded-[28px] p-6 md:p-8">
-              <p className="text-sm uppercase tracking-[0.22em] soft-text">Current output</p>
+            <div className="panel flex flex-col min-h-[400px] rounded-[28px] p-6 md:p-8">
+              <p className="text-sm uppercase tracking-[0.22em] soft-text shrink-0">Current output</p>
               <div className="mt-5 min-h-48 rounded-[24px] border border-black/8 bg-white p-6">
                 {activePrompt && (
                   <p className="text-4xl font-semibold tracking-tight">{activePrompt.payload.text}</p>
@@ -1536,8 +1789,8 @@ export function HostConsole({
               )}
             </div>
           </div>
-        </section>
-      </div>
-    </main>
+        </div>
+      }
+    />
   );
 }

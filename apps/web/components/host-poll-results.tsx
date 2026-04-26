@@ -13,7 +13,7 @@ export function HostPollResults({ poll, onReveal, onClear }: Props) {
   const maxVotes = Math.max(...Object.values(poll.votes), 1);
 
   return (
-    <div className="panel rounded-[28px] p-6 md:p-8">
+    <div className="panel min-h-[600px] rounded-[28px] p-6 md:p-8">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <p className="text-sm uppercase tracking-[0.22em] soft-text">Live poll</p>

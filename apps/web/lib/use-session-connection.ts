@@ -5,8 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   ClientMessage,
+  HostPreset,
   ServerMessage,
-  SessionSnapshot
+  SessionSnapshot,
+  VoiceSessionState
 } from "@interactive-presentation/types";
 
 type UseSessionConnectionOptions = {
@@ -37,6 +39,8 @@ export function useSessionConnection({
   const [error, setError] = useState<string | null>(null);
   const [latestReactionEmoji, setLatestReactionEmoji] = useState<string | null>(null);
   const [latestAttentionNudge, setLatestAttentionNudge] = useState<{ message: string; sentAt: string } | null>(null);
+  const [hostPresets, setHostPresets] = useState<HostPreset[]>([]);
+  const [voiceSession, setVoiceSession] = useState<VoiceSessionState | null>(null);
   const socketRef = useRef<PartySocket | null>(null);
   const snapshotRef = useRef<SessionSnapshot | null>(initialSnapshot);
   const prevInteractionRef = useRef<SessionSnapshot["currentInteraction"]>(null);
@@ -227,6 +231,12 @@ export function useSessionConnection({
         case "server.error":
           setError(message.message);
           break;
+        case "server.host_presets_updated":
+          setHostPresets(message.presets);
+          break;
+        case "server.voice_session_updated":
+          setVoiceSession(message.voiceSession);
+          break;
       }
     });
 
@@ -366,6 +376,24 @@ export function useSessionConnection({
         if (!socketRef.current || !hostToken) return;
         const message: ClientMessage = { type: "client.close_session", hostToken };
         socketRef.current.send(JSON.stringify(message));
+      },
+      updateHostPresets(presets: HostPreset[]) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = {
+          type: "client.update_host_presets",
+          hostToken,
+          presets
+        };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      updateVoiceSession(voiceSessionState: VoiceSessionState) {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = {
+          type: "client.update_voice_session",
+          hostToken,
+          voiceSession: voiceSessionState
+        };
+        socketRef.current.send(JSON.stringify(message));
       }
     }),
     [hostToken]
@@ -377,6 +405,8 @@ export function useSessionConnection({
     error,
     latestReactionEmoji,
     latestAttentionNudge,
+    hostPresets,
+    voiceSession,
     ...actions
   };
 }

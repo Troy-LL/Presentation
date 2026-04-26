@@ -6,7 +6,7 @@ import type { NextRequest } from "next/server";
 const rateLimitMap = new Map<string, { count: number; lastReset: number }>();
 
 export function middleware(request: NextRequest) {
-  const ip = request.ip ?? "127.0.0.1";
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "127.0.0.1";
   const path = request.nextUrl.pathname;
 
   // Only protect sensitive POST routes

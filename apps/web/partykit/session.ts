@@ -11,9 +11,11 @@ import type {
   SessionHistoryEntry,
   SlideDeckInteraction,
   QuizInteraction,
+  HostPreset,
   ServerMessage,
   SessionSnapshot,
-  SessionStatus
+  SessionStatus,
+  VoiceSessionState
 } from "@interactive-presentation/types";
 
 type RoomState = {
@@ -33,9 +35,11 @@ type RoomState = {
   participants: Map<string, string>;
   hosts: Set<string>;
   history: SessionHistoryEntry[];
-  // Rate limiting: participantId → interaction ID they last responded to
+  hostPresets: HostPreset[];
+  voiceSession: VoiceSessionState;
   lastResponseByParticipant: Map<string, string>;
   reactionTimestamps: Map<string, number[]>;
+  lastNudgeAt: number | null;
 };
 
 function createEmptyState(sessionCode: string): RoomState {
@@ -48,8 +52,16 @@ function createEmptyState(sessionCode: string): RoomState {
     participants: new Map(),
     hosts: new Set(),
     history: [],
+    hostPresets: [],
+    voiceSession: {
+      enabled: false,
+      mode: "continuous",
+      globalCommands: true,
+      lastTriggeredAt: null
+    },
     lastResponseByParticipant: new Map(),
-    reactionTimestamps: new Map()
+    reactionTimestamps: new Map(),
+    lastNudgeAt: null
   };
 }
 
@@ -59,6 +71,7 @@ function snapshotFromState(state: RoomState): SessionSnapshot {
     status: state.status,
     currentInteraction: state.currentInteraction,
     participantCount: state.participants.size,
+    activeHosts: state.hosts.size,
     createdAt: state.createdAt
   };
 }
@@ -81,6 +94,8 @@ export default class SessionServer implements Party.Server {
     const status = await this.room.storage.get<SessionStatus>("status");
     const hostToken = await this.room.storage.get<string>("hostToken");
     const history = await this.room.storage.get<SessionHistoryEntry[]>("history");
+    const hostPresets = await this.room.storage.get<HostPreset[]>("hostPresets");
+    const voiceSession = await this.room.storage.get<VoiceSessionState>("voiceSession");
 
     if (status) {
       this.state.status = status;
@@ -90,6 +105,12 @@ export default class SessionServer implements Party.Server {
     }
     if (history) {
       this.state.history = history;
+    }
+    if (hostPresets) {
+      this.state.hostPresets = hostPresets;
+    }
+    if (voiceSession) {
+      this.state.voiceSession = voiceSession;
     }
   }
 
@@ -251,8 +272,10 @@ export default class SessionServer implements Party.Server {
 
   onConnect(connection: Party.Connection) {
     // Limit connections per IP to prevent bot swarms
-    const ip = connection.address;
-    const connectionsFromIp = Array.from(this.room.getConnections()).filter(c => c.address === ip);
+    const ip = this.getConnectionAddress(connection);
+    const connectionsFromIp = Array.from(this.room.getConnections()).filter(
+      (c) => this.getConnectionAddress(c) === ip
+    );
     
     if (connectionsFromIp.length > 5) {
       connection.send(serialize({ type: "server.error", message: "Too many connections from this device." }));
@@ -270,8 +293,8 @@ export default class SessionServer implements Party.Server {
 
     if (participantLeft || hostLeft) {
       this.broadcast({
-        type: "server.participant_count",
-        participantCount: this.state.participants.size
+        type: "server.session_snapshot",
+        snapshot: snapshotFromState(this.state)
       });
     }
 
@@ -300,11 +323,55 @@ export default class SessionServer implements Party.Server {
             snapshot: snapshotFromState(this.state)
           })
         );
+        sender.send(
+          serialize({
+            type: "server.host_presets_updated",
+            presets: this.state.hostPresets
+          })
+        );
+        sender.send(
+          serialize({
+            type: "server.voice_session_updated",
+            voiceSession: this.state.voiceSession
+          })
+        );
         this.broadcast({
           type: "server.participant_count",
           participantCount: this.state.participants.size
         });
         return;
+
+      case "client.update_host_presets": {
+        if (!this.canControlRoom(sender.id, message.hostToken)) {
+          sender.send(serialize({ type: "server.error", message: "Preset update rejected." }));
+          return;
+        }
+
+        const cleanedPresets = this.sanitizeHostPresets(message.presets);
+        this.state.hostPresets = cleanedPresets;
+        await this.room.storage.put("hostPresets", cleanedPresets);
+        this.broadcast({
+          type: "server.host_presets_updated",
+          presets: cleanedPresets
+        });
+        return;
+      }
+
+      case "client.update_voice_session": {
+        if (!this.canControlRoom(sender.id, message.hostToken)) {
+          sender.send(serialize({ type: "server.error", message: "Voice session update rejected." }));
+          return;
+        }
+
+        const cleanedVoiceSession = this.sanitizeVoiceSession(message.voiceSession);
+        this.state.voiceSession = cleanedVoiceSession;
+        await this.room.storage.put("voiceSession", cleanedVoiceSession);
+        this.broadcast({
+          type: "server.voice_session_updated",
+          voiceSession: cleanedVoiceSession
+        });
+        return;
+      }
 
       case "client.host_connect":
         if (!this.isValidHost(message.hostToken)) {
@@ -312,13 +379,19 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
+        // Limit to 3 simultaneous host devices to prevent token leak abuse
+        if (this.state.hosts.size >= 3 && !this.state.hosts.has(sender.id)) {
+          sender.send(serialize({ type: "server.error", message: "Host limit reached (max 3)." }));
+          return;
+        }
+
         this.state.hosts.add(sender.id);
-        sender.send(
-          serialize({
-            type: "server.session_snapshot",
-            snapshot: snapshotFromState(this.state)
-          })
-        );
+        
+        // Broadcast snapshot so all connected hosts see the updated activeHosts count
+        this.broadcast({
+          type: "server.session_snapshot",
+          snapshot: snapshotFromState(this.state)
+        });
         return;
 
       case "client.start_prompt":
@@ -582,6 +655,14 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
+        const now = Date.now();
+        if (this.state.lastNudgeAt && now - this.state.lastNudgeAt < 8000) {
+          sender.send(serialize({ type: "server.error", message: "Nudge is on cooldown." }));
+          return;
+        }
+
+        this.state.lastNudgeAt = now;
+
         const cleanedMessage = message.message?.trim() || "Look at your device now";
         this.broadcast({
           type: "server.attention_nudge",
@@ -806,7 +887,9 @@ export default class SessionServer implements Party.Server {
         await Promise.all([
           this.room.storage.put("hostToken", payload.hostToken),
           this.room.storage.put("status", "lobby"),
-          this.room.storage.put("history", this.state.history)
+          this.room.storage.put("history", this.state.history),
+          this.room.storage.put("hostPresets", this.state.hostPresets),
+          this.room.storage.put("voiceSession", this.state.voiceSession)
         ]);
 
         return Response.json(snapshotFromState(this.state), { status: 201 });
@@ -869,6 +952,52 @@ export default class SessionServer implements Party.Server {
     timestamps.push(now);
     this.state.reactionTimestamps.set(participantId, timestamps);
     return true;
+  }
+
+  private getConnectionAddress(connection: Party.Connection): string {
+    const candidate = connection as Party.Connection & { address?: string };
+    return candidate.address ?? connection.id;
+  }
+
+  private sanitizeHostPresets(presets: HostPreset[]): HostPreset[] {
+    if (!Array.isArray(presets)) return [];
+
+    return presets
+      .slice(0, 50)
+      .map((preset) => {
+        const text = typeof preset.text === "string" ? preset.text.trim().slice(0, 140) : "";
+        const trigger = typeof preset.voiceTrigger === "string" ? preset.voiceTrigger.trim().slice(0, 120) : "";
+        const confidenceRaw = Number(preset.triggerConfidence);
+        const confidence = Number.isFinite(confidenceRaw)
+          ? Math.min(1, Math.max(0.5, confidenceRaw))
+          : undefined;
+
+        if (!text) {
+          return null;
+        }
+
+        return {
+          id: typeof preset.id === "string" && preset.id.trim() ? preset.id.trim() : crypto.randomUUID(),
+          text,
+          voiceTrigger: trigger || undefined,
+          triggerConfidence: confidence
+        } as HostPreset;
+      })
+      .filter((preset): preset is HostPreset => preset !== null);
+  }
+
+  private sanitizeVoiceSession(voiceSession: VoiceSessionState): VoiceSessionState {
+    const mode = voiceSession?.mode === "push-to-listen" ? "push-to-listen" : "continuous";
+
+    return {
+      enabled: Boolean(voiceSession?.enabled),
+      mode,
+      globalCommands: voiceSession?.globalCommands !== false,
+      lastTriggeredAt:
+        typeof voiceSession?.lastTriggeredAt === "string" && voiceSession.lastTriggeredAt.trim()
+          ? voiceSession.lastTriggeredAt
+          : null
+    };
   }
 
   private broadcast(message: ServerMessage) {
