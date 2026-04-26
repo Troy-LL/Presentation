@@ -163,13 +163,13 @@ export function useSessionConnection({
           break;
         case "server.slide_set":
           setSnapshot((current) => {
-            if (!current || current.currentInteraction?.type !== "slides") return current;
+            if (!current || !current.currentSlideDeck) return current;
             return {
               ...current,
-              currentInteraction: {
-                ...current.currentInteraction,
+              currentSlideDeck: {
+                ...current.currentSlideDeck,
                 payload: {
-                  ...current.currentInteraction.payload,
+                  ...current.currentSlideDeck.payload,
                   currentSlideIndex: message.index
                 }
               }
@@ -222,7 +222,8 @@ export function useSessionConnection({
             current
               ? {
                   ...current,
-                  status: "lobby",
+                  // Keep status as "active" if a slide deck is still running
+                  status: current.currentSlideDeck ? "active" : "lobby",
                   currentInteraction: null
                 }
               : current
@@ -236,6 +237,11 @@ export function useSessionConnection({
           break;
         case "server.voice_session_updated":
           setVoiceSession(message.voiceSession);
+          break;
+        case "server.slide_deck_updated":
+          setSnapshot((current) =>
+            current ? { ...current, currentSlideDeck: message.slideDeck } : current
+          );
           break;
       }
     });
@@ -344,16 +350,16 @@ export function useSessionConnection({
         socketRef.current.send(JSON.stringify(message));
       },
       nextSlide() {
-        if (!socketRef.current || !hostToken || snapshotRef.current?.currentInteraction?.type !== "slides") return;
-        const current = snapshotRef.current.currentInteraction;
-        const nextIndex = Math.min(current.payload.totalSlides - 1, current.payload.currentSlideIndex + 1);
+        if (!socketRef.current || !hostToken || !snapshotRef.current?.currentSlideDeck) return;
+        const deck = snapshotRef.current.currentSlideDeck;
+        const nextIndex = Math.min(deck.payload.totalSlides - 1, deck.payload.currentSlideIndex + 1);
         const message: ClientMessage = { type: "client.set_slide", hostToken, index: nextIndex };
         socketRef.current.send(JSON.stringify(message));
       },
       prevSlide() {
-        if (!socketRef.current || !hostToken || snapshotRef.current?.currentInteraction?.type !== "slides") return;
-        const current = snapshotRef.current.currentInteraction;
-        const prevIndex = Math.max(0, current.payload.currentSlideIndex - 1);
+        if (!socketRef.current || !hostToken || !snapshotRef.current?.currentSlideDeck) return;
+        const deck = snapshotRef.current.currentSlideDeck;
+        const prevIndex = Math.max(0, deck.payload.currentSlideIndex - 1);
         const message: ClientMessage = { type: "client.set_slide", hostToken, index: prevIndex };
         socketRef.current.send(JSON.stringify(message));
       },
@@ -370,6 +376,11 @@ export function useSessionConnection({
       clearInteraction() {
         if (!socketRef.current || !hostToken) return;
         const message: ClientMessage = { type: "client.clear_interaction", hostToken };
+        socketRef.current.send(JSON.stringify(message));
+      },
+      closeSlides() {
+        if (!socketRef.current || !hostToken) return;
+        const message: ClientMessage = { type: "client.close_slide_deck", hostToken };
         socketRef.current.send(JSON.stringify(message));
       },
       closeSession() {

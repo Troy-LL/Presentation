@@ -17,6 +17,8 @@
     "@interactive-presentation/types": "0.1.0",
     "@vercel/blob": "^2.3.3",
     "framer-motion": "^12.38.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
     "next": "^15.3.1",
     "partysocket": "^1.1.4",
     "pdfjs-dist": "^4.4.168",

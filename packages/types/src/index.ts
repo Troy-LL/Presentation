@@ -158,6 +158,8 @@ export type SessionSnapshot = {
   sessionCode: string;
   status: SessionStatus;
   currentInteraction: CurrentInteraction;
+  /** The active slide deck, independent of currentInteraction. Persists across non-slide interactions. */
+  currentSlideDeck: SlideDeckInteraction | null;
   participantCount: number;
   activeHosts: number;
   createdAt: string;
@@ -184,6 +186,36 @@ export type SessionHistoryEntry = {
 export type SessionHistoryResponse = {
   sessionCode: string;
   history: SessionHistoryEntry[];
+};
+
+export type InteractionMetricOption = {
+  optionId: string;
+  optionText: string;
+  voteCount: number;
+};
+
+export type InteractionMetric = {
+  interactionId: string;
+  interactionType: InteractionType;
+  promptText: string;
+  slideIndexAtLaunch: number | null;
+  participantsConnectedAtLaunch: number;
+  totalResponsesReceived: number;
+  responseRate: number;
+  optionBreakdown: InteractionMetricOption[];
+  openTextResponses: string[];
+  startedAt: string;
+  endedAt: string | null;
+  durationSeconds: number | null;
+};
+
+export type SessionMetrics = {
+  sessionCode: string;
+  startedAt: string;
+  endedAt: string | null;
+  totalUniqueParticipants: number;
+  peakConcurrentParticipants: number;
+  interactionMetrics: InteractionMetric[];
 };
 
 // ─── Client → Server ─────────────────────────────────────────────────────────
@@ -279,6 +311,10 @@ export type ClientMessage =
       hostToken: string;
     }
   | {
+      type: "client.close_slide_deck";
+      hostToken: string;
+    }
+  | {
       type: "client.close_session";
       hostToken: string;
     }
@@ -366,5 +402,8 @@ export type ServerMessage =
   | {
       type: "server.voice_session_updated";
       voiceSession: VoiceSessionState;
+    }
+  | {
+      type: "server.slide_deck_updated";
+      slideDeck: SlideDeckInteraction | null;
     };
-

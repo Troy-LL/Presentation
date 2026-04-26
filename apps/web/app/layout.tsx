@@ -9,7 +9,7 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Interactive Presentation",
+  title: "LocalHost — Live Audience Interaction",
   description: "Live prompts for audience-driven sessions."
 };
 

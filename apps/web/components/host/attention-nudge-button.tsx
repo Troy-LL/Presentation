@@ -24,7 +24,7 @@ export function AttentionNudgeButton({ onNudge, collapsed = false }: Props) {
     <button
       className={[
         "group relative flex items-center justify-center gap-3 rounded-2xl transition-all duration-300",
-        collapsed ? "h-12 w-12" : "w-full px-4 py-3",
+        collapsed ? "mx-auto h-10 w-10 shrink-0" : "w-full px-4 py-3",
         cooldown > 0 
           ? "cursor-not-allowed bg-[var(--accent)]/50 text-white" 
           : "accent-button active:scale-95 text-white"

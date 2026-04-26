@@ -57,7 +57,7 @@ interface UseVoiceCommandsProps {
  *   fuzzyMatch("next please", "next slide", 0.5) → true  (1/2 = 50% >= 0.5)
  *   fuzzyMatch("hello world", "end poll", 0.7) → false  (0/2 = 0%)
  */
-function fuzzyMatch(transcript: string, phrase: string, threshold = 0.7): boolean {
+function fuzzyMatch(transcript: string, phrase: string, threshold = 0.8): boolean {
   const phraseTokens = phrase.toLowerCase().split(/\s+/);
   const transcriptTokens = transcript.toLowerCase().split(/\s+/);
 
@@ -174,7 +174,7 @@ export function useVoiceCommands({
         const threshold = cmd.confidence ?? minConfidence;
 
         const matched = cmd.phrases.some((phrase) =>
-          fuzzyMatch(transcript, phrase)
+          fuzzyMatch(transcript, phrase, threshold)
         );
 
         if (matched && confidence >= threshold) {

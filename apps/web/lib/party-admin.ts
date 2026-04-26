@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import type { SessionHistoryResponse, SessionSnapshot } from "@interactive-presentation/types";
+import type {
+  SessionHistoryResponse,
+  SessionMetrics,
+  SessionSnapshot
+} from "@interactive-presentation/types";
 
 const snapshotSchema = z.object({
   sessionCode: z.string(),
@@ -16,6 +20,7 @@ const snapshotSchema = z.object({
     .passthrough()
     .nullable(),
   participantCount: z.number(),
+  activeHosts: z.number(),
   createdAt: z.string()
 });
 
@@ -94,5 +99,33 @@ export async function getSessionHistory(
 
   const payload = (await response.json()) as SessionHistoryResponse;
   return payload;
+}
+
+export async function getSessionMetrics(
+  sessionCode: string,
+  hostToken: string
+): Promise<SessionMetrics> {
+  const response = await fetch(roomUrl(sessionCode), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      action: "get_metrics",
+      hostToken
+    }),
+    cache: "no-store"
+  });
+
+  if (response.status === 404) {
+    throw new Error("Session not found.");
+  }
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? "Could not fetch session metrics.");
+  }
+
+  return (await response.json()) as SessionMetrics;
 }
 

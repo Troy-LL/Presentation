@@ -158,6 +158,7 @@ Chosen for simplicity, low cost, and open-source friendliness.
 - **PDF Engine**: `pdfjs-dist` (Mozilla) — for client-side PDF-to-Canvas rendering
 - **Animations**: `framer-motion` — for smooth slide transitions
 - **Voice**: Web Speech API (built into Chrome/Edge) — no API key, no cost, no external dependency
+- **Report export**: `jsPDF` — client-side PDF generation, no server round-trip, no third-party export service
 
 ### Backend
 - **HTTP/API**: Next.js API routes (serverless) for session creation
@@ -200,6 +201,33 @@ Response {
   participantId: string  // anonymous, generated on join
   value: string          // selected option, typed text, emoji, etc.
   timestamp: timestamp
+}
+
+SessionMetrics {
+  sessionId: string
+  totalParticipants: number
+  peakConcurrent: number
+  interactions: InteractionMetric[]
+  exportedAt: timestamp | null
+}
+
+InteractionMetric {
+  interactionId: string
+  type: InteractionType
+  question: string | null          // prompt text or poll question
+  slideIndexAtLaunch: number | null // which slide was active when triggered
+  totalResponses: number
+  responseRate: number             // responses / participants at time of launch
+  results: Record<string, number>  // option → count, or value → count for text
+  durationSeconds: number          // time from start to close
+  startedAt: timestamp
+  closedAt: timestamp
+}
+
+SlideState {
+  currentIndex: number             // persisted in room state, survives interaction changes
+  totalSlides: number
+  pdfLoaded: boolean
 }
 ```
 
@@ -244,7 +272,9 @@ Audience device  ──WebSocket──┼──► PartyKit room / local ws serv
 │   │           ├── MultiDeviceBadge.tsx     # connected host count + host token QR
 │   │           ├── AttentionNudgeButton.tsx # always-present nudge trigger
 │   │           ├── VoiceCommandToggle.tsx   # mic on/off + status indicator
-│   │           └── VoiceCommandEditor.tsx   # phrase assignment within preset editor
+│   │           ├── VoiceCommandEditor.tsx   # phrase assignment within preset editor
+│   │           ├── SessionEndModal.tsx      # end session confirm + download prompt
+│   │           └── MetricsReportPreview.tsx # summary before download
 │   └── party/                    # PartyKit server (replaces separate backend)
 │       ├── session.ts            # Session state machine (room logic)
 │       └── interactions/         # Server-side logic per interaction type
@@ -253,6 +283,8 @@ Audience device  ──WebSocket──┼──► PartyKit room / local ws serv
 ├── hooks/
 │   ├── useHostLayout.ts          # aspect ratio + orientation detection
 │   └── useVoiceCommands.ts       # SpeechRecognition wrapper + fuzzy phrase matching
+├── lib/
+│   └── exportReport.ts           # jsPDF / CSV generation from SessionMetrics
 ├── .env.example                  # NEXT_PUBLIC_MODE=local | cloud
 └── README.md
 ```
@@ -431,16 +463,13 @@ Microphone → SpeechRecognition (browser) → phrase match → dispatch action 
 
 - [x] **Phrase-to-action mapping**
   - [x] Host can assign a trigger phrase to any saved Preset (e.g. "let's vote" → launch Poll A)
-  - [x] Built-in global commands that always work regardless of presets:
-
-    | Say | Action |
-    |---|---|
-    | "next slide" | Advance to next slide |
-    | "go back" / "previous slide" | Go to previous slide |
-    | "end poll" / "close it" | Close the active interaction |
-    | "start timer" | Launch countdown (uses last-set duration) |
-    | "back to lobby" | Return audience to blank screen |
-
+  - [x] Built-in global commands — implemented as internal system presets, not a separate lookup table. Each command is a named action registered in the voice engine at startup:
+    - `"next slide"` → `SLIDE_NEXT`
+    - `"go back"` / `"previous slide"` → `SLIDE_PREV`
+    - `"end poll"` / `"close it"` → `CLOSE_INTERACTION`
+    - `"start timer"` → `LAUNCH_COUNTDOWN` (uses last-set duration)
+    - `"back to lobby"` → `RETURN_TO_LOBBY`
+  - [x] All global commands are registered via the same fuzzy-match pipeline as user presets — no separate code path, no separate table to break
   - [x] Phrases are fuzzy-matched (not exact string) — "let's do a vote" still triggers "let's vote"
   - [x] Minimum confidence threshold (default 0.80) — configurable per host session
 
@@ -486,22 +515,22 @@ Microphone → SpeechRecognition (browser) → phrase match → dispatch action 
   └── useVoiceCommands.ts             # core SpeechRecognition wrapper + fuzzy match logic
   ```
 
-- [ ] **Touch-ups & UX Polishing**
-  - [ ] Add active/pressed states to all dashboard and audience buttons for tactile feedback
-  - [ ] Redesign landing page (`/`) to clearly offer two paths: "Host a Session" and "Join a Session"
-  - [ ] Make the "Host shortcut" on the join page more subtle to keep focus on joining
-  - [ ] Add subtle hover transitions to all interactive cards and panels
-  - [ ] **Host Layout Switching:** Add a simple layout toggle button in the host sidebar (desktop) or toolbar (mobile).
-    - [ ] **Desktop:** Switch between **Standard** (side toolbar + full right panel) and **Compact** (icon-only side toolbar, right panel hidden).
-    - [ ] **Mobile:** Switch between **Standard** (bottom toolbar + full content) and **Heads-Up** (bottom toolbar only, interaction title large, no clutter).
-    - [ ] Layout choice is saved in `localStorage` per session.
-  - [ ] **Phone Quick Settings:** In mobile view, swipe up on the bottom toolbar to expand a compact tray showing:
-    - [ ] End Session (2-tap confirm)
-    - [ ] Toggle Fullscreen 
-    - [ ] Toggle Voice Control
-    - [ ] Slide Settings (current slide + navigator)
-    - [ ] This tray slides up over the bottom ~30% of the screen and can be swiped back down.
-  - [ ] **Icon SVGs:** All icons must be SVGs.
+- [x] **Touch-ups & UX Polishing**
+  - [x] Add active/pressed states to all dashboard and audience buttons for tactile feedback
+  - [x] Redesign landing page (`/`) to clearly offer two paths: "Host a Session" and "Join a Session"
+  - [x] Make the "Host shortcut" on the join page more subtle to keep focus on joining
+  - [x] Add subtle hover transitions to all interactive cards and panels
+  - [x] **Host Layout Switching:** Add a simple layout toggle button in the host sidebar (desktop) or toolbar (mobile).
+    - [x] **Desktop:** Switch between **Standard** (side toolbar + full right panel) and **Compact** (icon-only side toolbar, right panel hidden).
+    - [x] **Mobile:** Switch between **Standard** (bottom toolbar + full content) and **Heads-Up** (bottom toolbar only, interaction title large, no clutter).
+    - [x] Layout choice is saved in `localStorage` per session.
+  - [x] **Phone Quick Settings:** In mobile view, swipe up on the bottom toolbar to expand a compact tray showing:
+    - [x] End Session (2-tap confirm)
+    - [x] Toggle Fullscreen 
+    - [x] Toggle Voice Control
+    - [x] Slide Settings (current slide + navigator)
+    - [x] This tray slides up over the bottom ~30% of the screen and can be swiped back down.
+  - [x] **Icon SVGs:** All icons must be SVGs.
   
 
 **Browser support reality check:**
@@ -518,7 +547,108 @@ Voice activation is opt-in and off by default. The host dashboard works identica
 
 ---
 
-### Phase 8 — Open Source Release
+---
+
+### Phase 8 — Bug Fixes, Slide UX & Session Metrics
+
+This phase addresses confirmed bugs, UX inconsistencies found during real use, and adds the metrics reporting system. Nothing here is new feature work — it's making what already exists actually correct and trustworthy.
+
+#### Bug: Session Status Not Clearing on End
+
+When the host ends a session, the host dashboard still shows a "Live" indicator. The session status is not being broadcast correctly on close.
+
+- [x] `{ type: "SESSION_CLOSED" }` WebSocket event must be emitted server-side the moment the host ends the session
+- [x] Host dashboard listens for this event and transitions status indicator from `"Live"` → `"Ended"` immediately
+- [x] Audience devices receive the same event and are shown a "Session has ended" screen — they are not left on a blank or stale screen
+- [x] Status indicator component reads exclusively from server-pushed state, not from local state or a stale join-time snapshot
+- [x] Verified: ending a session from any host device (including secondary host devices) triggers the correct status update on all other host dashboards
+
+#### Bug: Audience Slide View — Overlapping UI
+
+As seen in the screenshot, metadata text (slide number, "Synced live with host" label, filename) is rendering on top of the slide canvas itself, obscuring content.
+
+- [x] All slide metadata — filename, slide counter (e.g. `1/15`), sync status badge — must render **outside** the slide canvas boundary, not overlaid on top of it
+- [x] **Desktop audience view layout:**
+  - Slide canvas (16:9, fills available width)
+  - Below the canvas: filename left-aligned, slide counter right-aligned, sync badge centered — all in a single metadata bar below the slide
+- [x] **Phone audience view layout:**
+  - Slide canvas expands to fill as much vertical space as possible
+  - Metadata bar is a slim strip below the canvas (not floating over it)
+  - The "Synced live with host" badge moves to the metadata bar — not a corner overlay
+  - Slide canvas must not be cropped or scaled down to accommodate UI chrome; chrome goes below
+- [x] No text, badge, or UI element uses `position: absolute` inside the canvas wrapper unless it is explicitly a non-blocking overlay (e.g. a loading spinner that disappears)
+
+#### Bug: Slide Position Resets to Slide 1 When Interaction is Triggered
+
+When the host launches a poll, prompt, or any interaction while slides are active, the slide position resets to slide 1 after the interaction closes.
+
+- [x] **Root cause:** `SlideState` (current index) is being stored as part of the `currentInteraction` payload and wiped when the interaction closes. It must be stored as **independent room state**, never nested inside an interaction object.
+- [x] `SlideState.currentIndex` lives at the top level of the PartyKit room state — peer to `currentInteraction`, not a child of it
+- [x] Closing an interaction emits `{ type: "CLOSE_INTERACTION" }` — this event must never touch `SlideState`
+- [x] Launching a new interaction emits `{ type: "START_INTERACTION", ... }` — this event must never touch `SlideState`
+- [x] After an interaction closes, the audience slide view resumes showing the slide that was active before the interaction started — no reset, no flicker
+- [x] Verified with test case: start on slide 8 → launch poll → close poll → audience is still on slide 8
+
+#### Slide + Interaction Coexistence (Removed: Contextual Triggers)
+
+The previous plan included "Contextual Interaction" (auto-launch polls on specific slides). This is removed. The correct model is simpler:
+
+- [x] **Slides and interactions are independent.** The slide engine and the interaction engine run in parallel — launching a poll does not replace the slide, and the slide does not block launching a poll.
+- [x] **Audience view during an active interaction while slides are loaded:**
+  - The slide canvas remains visible in the upper portion of the screen
+  - The interaction UI (poll buttons, prompt text, etc.) appears **below the slide**, not replacing it
+  - On phone: slide takes ~55% of screen height, interaction takes ~40%, thin divider between
+  - On desktop: slide is in the center panel, interaction panel is on the right — same layout as always
+- [x] The host toolbar interaction buttons work at all times regardless of slide state — no disabled states, no "you must close slides first" gates
+- [x] Removed from Phase 4: `Contextual Interaction (Auto-launch specific polls when hitting certain slides)` — this checkbox is deprecated and will not be built
+
+#### Session Metrics System
+
+Every interaction's data is tracked passively throughout the session. The host is never asked to opt in — metrics are always collected. At session end, the host is prompted to download a report.
+
+- [x] **End Session button should be on the panel header** - this makes it easier to close the session when you are done.
+- [x] **What is tracked per interaction:**
+  - Interaction type and question/prompt text
+  - Which slide was active when it was launched (`slideIndexAtLaunch`)
+  - Total number of responses received
+  - Response rate (responses ÷ participants connected at launch time)
+  - Per-option vote counts (polls, quiz)
+  - All open text responses (anonymized, no participant ID attached)
+  - Duration from launch to close (seconds)
+  - Timestamp of start and end
+- [x] **What is tracked per session:**
+  - Total unique participants (by anonymous UUID)
+  - Peak concurrent participants (highest simultaneous connection count)
+  - List of all interaction metrics in chronological order
+- [x] **Data model** (already added to Section 6 above): `SessionMetrics` and `InteractionMetric`
+- [x] Metrics are accumulated server-side in PartyKit room state throughout the session — no client-side aggregation
+- [x] **Session End Flow — Download Prompt:**
+  - When the host taps "End Session" and confirms, before the session is torn down, a modal appears:
+    > **"Session complete! Download your metrics report?"**
+    > [Download Report] [Skip]
+  - "Download Report" triggers a JSON → PDF or JSON → CSV export (host can choose format) and downloads it to the host device
+  - "Skip" ends the session immediately with no export
+  - The modal has a 30-second auto-dismiss that skips the download — the session cannot be held open indefinitely
+  - If multiple host devices are connected, only the device that clicked "End Session" sees the download prompt
+- [x] **Report contents (PDF or CSV):**
+  - [x] Session summary: date, duration, session code, total participants, peak concurrent
+  - [x] Per-interaction table: type, question, slide number at launch, responses, response rate, duration
+  - [x] Poll/quiz breakdowns: each option with vote count and percentage
+  - [x] Open text responses: listed verbatim, one per row
+- [x] Report is generated entirely client-side (no server round-trip) using `jsPDF` (PDF) or plain CSV string construction — no data ever sent to a third-party export service
+- [x] **Project structure additions:**
+  ```
+  apps/web/
+  ├── components/host/
+  │   ├── SessionEndModal.tsx       # end session confirm + download prompt
+  │   └── MetricsReportPreview.tsx  # optional: shows a summary before download
+  └── lib/
+      └── exportReport.ts           # jsPDF / CSV generation from SessionMetrics
+  ```
+
+---
+
+### Phase 9 — Open Source Release
 - [x] Release docs pass
   - [x] Clean README with architecture overview and project purpose
   - [x] Document both deployment targets: localhost mode and cloud mode
@@ -541,7 +671,7 @@ Voice activation is opt-in and off by default. The host dashboard works identica
   - [x] Add code style and testing expectations
   - [x] Add a minimal issue/PR checklist for contributors
 
-### Phase 8 — Release Done Criteria
+### Phase 9 — Release Done Criteria
 - [x] A fresh clone can be started locally using the README alone
 - [x] Cloud deployment instructions work without external platform ambiguity
 - [x] Docker Compose starts the full stack without undocumented manual steps

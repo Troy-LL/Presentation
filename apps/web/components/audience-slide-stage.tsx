@@ -7,9 +7,11 @@ import type { SlideDeckInteraction } from "@interactive-presentation/types";
 
 type Props = {
   interaction: SlideDeckInteraction;
+  /** When true the component takes only its natural height (for coexistence layout) */
+  compact?: boolean;
 };
 
-export function AudienceSlideStage({ interaction }: Props) {
+export function AudienceSlideStage({ interaction, compact = false }: Props) {
   const [pageDataUrl, setPageDataUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,63 +64,61 @@ export function AudienceSlideStage({ interaction }: Props) {
     };
   }, [interaction.payload.currentSlideIndex, interaction.payload.sourceUrl]);
 
+  const wrapperClass = compact
+    ? "flex w-full flex-col"
+    : "flex min-h-screen w-full flex-col items-center justify-center bg-white px-4 py-6 md:px-6 md:py-8";
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 md:px-6 md:py-8">
-      <div className="w-full max-w-6xl">
+    <div className={wrapperClass}>
+      <div className="w-full max-w-6xl mx-auto">
+        {/* ── Slide canvas ─────────────────────────────────────────────── */}
         <div className="relative aspect-[16/9] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-          {/* Layer 1: Slide image */}
-          <div className="absolute inset-0">
-            <AnimatePresence mode="wait">
-              {pageDataUrl && (
-                <motion.img
-                  animate={{ opacity: 1, x: 0 }}
-                  className="h-full w-full object-contain"
-                  exit={{ opacity: 0, x: -20 }}
-                  initial={{ opacity: 0, x: 20 }}
-                  key={`${interaction.payload.deckId}:${interaction.payload.currentSlideIndex}`}
-                  src={pageDataUrl}
-                />
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Layer 2: Interaction overlay */}
-          <div className="pointer-events-none absolute inset-0">
-            <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/25 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/30 to-transparent" />
-
-            {loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/65 text-sm font-medium text-slate-600">
-                Rendering slide...
-              </div>
+          {/* Slide image */}
+          <AnimatePresence mode="wait">
+            {pageDataUrl && (
+              <motion.img
+                animate={{ opacity: 1, x: 0 }}
+                className="h-full w-full object-contain"
+                exit={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0, x: 20 }}
+                key={`${interaction.payload.deckId}:${interaction.payload.currentSlideIndex}`}
+                src={pageDataUrl}
+              />
             )}
+          </AnimatePresence>
 
-            {loadError && (
-              <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm font-medium text-red-600">
-                {loadError}
-              </div>
-            )}
-          </div>
-
-          {/* Layer 3: Controls/status */}
-          <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 sm:p-4">
-            <div className="flex items-center justify-between gap-2">
-              <p className="min-w-0 max-w-[72%] truncate rounded-full bg-black/45 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/90 sm:text-xs">
-                {interaction.payload.title ?? "Presentation"}
-              </p>
-              <p className="rounded-full bg-black/45 px-3 py-1 text-xs font-medium text-white/90">
-                {slideLabel}
-              </p>
+          {/* Loading spinner — only allowed absolute inside canvas */}
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/65 text-sm font-medium text-slate-600">
+              Rendering slide...
             </div>
+          )}
 
-            <div className="flex items-center justify-end">
-              <p className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-medium text-slate-600 shadow-sm sm:text-xs">
-                Synced live with host
-              </p>
+          {loadError && (
+            <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm font-medium text-red-600">
+              {loadError}
             </div>
-          </div>
+          )}
+        </div>
+
+        {/* ── Metadata bar — OUTSIDE the canvas, below it ──────────────── */}
+        <div className="mt-2 flex items-center justify-between gap-2 px-1">
+          {/* Left: filename */}
+          <p className="min-w-0 flex-1 truncate text-xs font-medium text-slate-500">
+            {interaction.payload.title ?? "Presentation"}
+          </p>
+
+          {/* Centre: sync badge */}
+          <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">
+            Synced live with host
+          </span>
+
+          {/* Right: slide counter */}
+          <p className="shrink-0 text-xs font-medium tabular-nums text-slate-500">
+            {slideLabel}
+          </p>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

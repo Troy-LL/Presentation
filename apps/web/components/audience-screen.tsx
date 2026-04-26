@@ -48,25 +48,18 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     try {
       const ctx = audioContextRef.current;
       if (!ctx) return;
-      
-      // Ensure it's resumed
       if (ctx.state === "suspended") {
         void ctx.resume();
       }
-      
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      
       osc.connect(gain);
       gain.connect(ctx.destination);
-      
       osc.type = "sine";
       osc.frequency.setValueAtTime(880, ctx.currentTime);
-      
       gain.gain.setValueAtTime(0, ctx.currentTime);
       gain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-      
       osc.start();
       osc.stop(ctx.currentTime + 0.4);
     } catch {
@@ -91,31 +84,20 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
           throw new Error(apiError ?? "This session does not exist.");
         }
 
-        if (!active) {
-          return;
-        }
-
+        if (!active) return;
         setInitialSnapshot(payload);
       } catch (caughtError) {
-        if (!active) {
-          return;
-        }
-
+        if (!active) return;
         setLoadError(
           caughtError instanceof Error ? caughtError.message : "This session does not exist."
         );
       } finally {
-        if (active) {
-          setLoading(false);
-        }
+        if (active) setLoading(false);
       }
     }
 
     void loadSnapshot();
-
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [sessionCode]);
 
   const {
@@ -137,21 +119,18 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
 
   useEffect(() => {
     if (!latestAttentionNudge) return;
-
     setNudgeMessage(latestAttentionNudge.message);
-    
-    // Pick a random "safe" (pastel/darker) color for the flash
-    const colors = ["rgba(255, 95, 31, 0.15)", "rgba(59, 130, 246, 0.15)", "rgba(168, 85, 247, 0.15)", "rgba(34, 197, 94, 0.15)"];
+    const colors = [
+      "rgba(255, 95, 31, 0.15)",
+      "rgba(59, 130, 246, 0.15)",
+      "rgba(168, 85, 247, 0.15)",
+      "rgba(34, 197, 94, 0.15)"
+    ];
     setFlashColor(colors[Math.floor(Math.random() * colors.length)]);
-
-    // Vibrate (Android only)
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
       navigator.vibrate?.([120, 80, 120]);
     }
-
-    // Play Sound (Works if user has interacted once)
     playNudgeSound();
-
     const timer = window.setTimeout(() => {
       setNudgeMessage(null);
       setFlashColor(null);
@@ -160,7 +139,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
   }, [latestAttentionNudge]);
 
   const flashOverlay = flashColor ? (
-    <div 
+    <div
       className="pointer-events-none fixed inset-0 z-[60] transition-opacity duration-300"
       style={{ backgroundColor: flashColor }}
     />
@@ -174,11 +153,13 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     </div>
   ) : null;
 
+  // ─── Early states (before WS connection) ───────────────────────────────────
+
   if (loading) {
     return (
       <>
         {nudgeBanner}
-      {flashOverlay}
+        {flashOverlay}
         <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
           <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Joining session…</p>
         </main>
@@ -190,7 +171,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     return (
       <>
         {nudgeBanner}
-      {flashOverlay}
+        {flashOverlay}
         <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
           <div className="max-w-md text-center">
             <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Session unavailable</p>
@@ -212,11 +193,14 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     );
   }
 
+  // ─── Live states (driven by WebSocket snapshot) ────────────────────────────
+
+  // Bug 1 fix: check status from live snapshot, not just the initial load
   if (snapshot.status === "closed") {
     return (
       <>
         {nudgeBanner}
-      {flashOverlay}
+        {flashOverlay}
         <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
           <div className="max-w-md text-center">
             <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Session Closed</p>
@@ -224,7 +208,7 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
               Thanks for participating!
             </h1>
             <p className="mt-4 text-base leading-7 text-slate-600">
-              This presentation room has been automatically closed due to inactivity, or the host has permanently ended it.
+              The host has ended this session. Hope you enjoyed it!
             </p>
           </div>
         </main>
@@ -232,29 +216,74 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     );
   }
 
-  if (snapshot.currentInteraction?.type === "poll") {
+  const { currentSlideDeck, currentInteraction } = snapshot;
+  const hasSlides = Boolean(currentSlideDeck);
+  const hasInteraction = Boolean(currentInteraction) && currentInteraction?.type !== "slides";
+
+  // ─── Coexistence: slides + interaction running simultaneously ──────────────
+  if (hasSlides && hasInteraction) {
+    const interactionNode = renderInteractionNode(currentInteraction!, {
+      submitVote,
+      submitQuizAnswer,
+      sendReaction,
+      submitTextResponse,
+      error
+    });
+
     return (
       <>
         {nudgeBanner}
-      {flashOverlay}
-        <AudiencePoll
-          onVote={submitVote}
-          poll={snapshot.currentInteraction}
-        />
+        {flashOverlay}
+        <main className="flex min-h-[100dvh] flex-col bg-white">
+          {/* Slides take ~55% */}
+          <div className="flex-[55] overflow-hidden">
+            <AudienceSlideStage compact interaction={currentSlideDeck!} />
+          </div>
+
+          {/* Thin divider */}
+          <div className="h-px shrink-0 bg-slate-100" />
+
+          {/* Interaction takes ~40% — scrollable if content overflows */}
+          <div className="flex-[40] overflow-y-auto">
+            {interactionNode}
+          </div>
+        </main>
       </>
     );
   }
 
-  if (snapshot.currentInteraction?.type === "prompt") {
+  // ─── Slides only ───────────────────────────────────────────────────────────
+  if (hasSlides) {
     return (
       <>
         {nudgeBanner}
-      {flashOverlay}
+        {flashOverlay}
+        <AudienceSlideStage interaction={currentSlideDeck!} />
+      </>
+    );
+  }
+
+  // ─── Non-slide interaction only ────────────────────────────────────────────
+  if (currentInteraction?.type === "poll") {
+    return (
+      <>
+        {nudgeBanner}
+        {flashOverlay}
+        <AudiencePoll onVote={submitVote} poll={currentInteraction} />
+      </>
+    );
+  }
+
+  if (currentInteraction?.type === "prompt") {
+    return (
+      <>
+        {nudgeBanner}
+        {flashOverlay}
         <main className="flex min-h-screen items-center justify-center bg-white px-8 text-center">
           <div className="max-w-5xl">
             <p className="text-sm uppercase tracking-[0.28em] text-slate-300">Live prompt</p>
             <h1 className="mt-8 text-5xl font-semibold tracking-tight text-slate-950 md:text-7xl">
-              {snapshot.currentInteraction.payload.text}
+              {currentInteraction.payload.text}
             </h1>
             {error ? <p className="mt-6 text-sm text-red-600">{error}</p> : null}
           </div>
@@ -263,65 +292,47 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
     );
   }
 
-  if (snapshot.currentInteraction?.type === "quiz") {
+  if (currentInteraction?.type === "quiz") {
     return (
       <>
         {nudgeBanner}
-      {flashOverlay}
-        <AudienceQuiz
-          onSubmitAnswer={submitQuizAnswer}
-          quiz={snapshot.currentInteraction}
-        />
+        {flashOverlay}
+        <AudienceQuiz onSubmitAnswer={submitQuizAnswer} quiz={currentInteraction} />
       </>
     );
   }
 
-  if (snapshot.currentInteraction?.type === "reactions") {
+  if (currentInteraction?.type === "reactions") {
     return (
       <>
         {nudgeBanner}
-      {flashOverlay}
-        <AudienceReactions
-          onSendReaction={sendReaction}
-          reactions={snapshot.currentInteraction}
-        />
+        {flashOverlay}
+        <AudienceReactions onSendReaction={sendReaction} reactions={currentInteraction} />
       </>
     );
   }
 
-  if (snapshot.currentInteraction?.type === "open_text") {
+  if (currentInteraction?.type === "open_text") {
     return (
       <>
         {nudgeBanner}
-      {flashOverlay}
-        <AudienceOpenText
-          interaction={snapshot.currentInteraction}
-          onSubmit={submitTextResponse}
-        />
+        {flashOverlay}
+        <AudienceOpenText interaction={currentInteraction} onSubmit={submitTextResponse} />
       </>
     );
   }
 
-  if (snapshot.currentInteraction?.type === "countdown") {
+  if (currentInteraction?.type === "countdown") {
     return (
       <>
         {nudgeBanner}
-      {flashOverlay}
-        <AudienceCountdown interaction={snapshot.currentInteraction} />
+        {flashOverlay}
+        <AudienceCountdown interaction={currentInteraction} />
       </>
     );
   }
 
-  if (snapshot.currentInteraction?.type === "slides") {
-    return (
-      <>
-        {nudgeBanner}
-      {flashOverlay}
-        <AudienceSlideStage interaction={snapshot.currentInteraction} />
-      </>
-    );
-  }
-
+  // ─── Lobby / waiting ───────────────────────────────────────────────────────
   return (
     <>
       {nudgeBanner}
@@ -341,4 +352,45 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
       </main>
     </>
   );
+}
+
+// ─── Helper: render the interaction node for coexistence view ─────────────────
+
+type InteractionActions = {
+  submitVote: (optionId: string) => void;
+  submitQuizAnswer: (optionId: string) => void;
+  sendReaction: (emoji: string) => void;
+  submitTextResponse: (text: string) => void;
+  error: string | null;
+};
+
+function renderInteractionNode(
+  interaction: NonNullable<SessionSnapshot["currentInteraction"]>,
+  actions: InteractionActions
+) {
+  switch (interaction.type) {
+    case "poll":
+      return <AudiencePoll onVote={actions.submitVote} poll={interaction} />;
+    case "quiz":
+      return <AudienceQuiz onSubmitAnswer={actions.submitQuizAnswer} quiz={interaction} />;
+    case "reactions":
+      return <AudienceReactions onSendReaction={actions.sendReaction} reactions={interaction} />;
+    case "open_text":
+      return <AudienceOpenText interaction={interaction} onSubmit={actions.submitTextResponse} />;
+    case "countdown":
+      return <AudienceCountdown interaction={interaction} />;
+    case "prompt":
+      return (
+        <div className="flex h-full items-center justify-center px-6 py-4 text-center">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Live prompt</p>
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
+              {interaction.payload.text}
+            </p>
+          </div>
+        </div>
+      );
+    default:
+      return null;
+  }
 }

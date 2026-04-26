@@ -1,32 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type HostLayoutMode = "desktop" | "condensed" | "phone";
+export type HostLayoutVariant = "standard" | "compact" | "heads-up";
+
+const STORAGE_KEY = "host-layout-variant";
+
+function getAutoMode(): HostLayoutMode {
+  const width = window.innerWidth;
+  if (width >= 1024) return "desktop";
+  if (width >= 768) return "condensed";
+  return "phone";
+}
 
 export function useHostLayout() {
   const [layoutMode, setLayoutMode] = useState<HostLayoutMode>("desktop");
+  const [variant, setVariantState] = useState<HostLayoutVariant>("standard");
 
+  // Load saved variant from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "compact" || saved === "heads-up" || saved === "standard") {
+      setVariantState(saved);
+    }
+  }, []);
+
+  // Auto-detect mode on resize
   useEffect(() => {
     function handleResize() {
-      const width = window.innerWidth;
-      
-      if (width >= 1024) {
-        setLayoutMode("desktop");
-      } else if (width >= 768) {
-        setLayoutMode("condensed");
-      } else {
-        setLayoutMode("phone");
-      }
+      setLayoutMode(getAutoMode());
     }
 
-    // Initial check
     handleResize();
 
     window.addEventListener("resize", handleResize);
-    // Listen for orientation changes explicitly for mobile devices
     window.addEventListener("orientationchange", () => {
-      // Add a small delay to allow window.innerWidth to update after rotation
       setTimeout(handleResize, 150);
     });
 
@@ -36,5 +45,10 @@ export function useHostLayout() {
     };
   }, []);
 
-  return layoutMode;
+  const setVariant = useCallback((v: HostLayoutVariant) => {
+    setVariantState(v);
+    localStorage.setItem(STORAGE_KEY, v);
+  }, []);
+
+  return { layoutMode, variant, setVariant };
 }

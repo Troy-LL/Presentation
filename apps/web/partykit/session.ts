@@ -3,6 +3,8 @@ import type * as Party from "partykit/server";
 import type {
   ClientMessage,
   CountdownInteraction,
+  InteractionMetric,
+  InteractionMetricOption,
   OpenTextInteraction,
   OpenTextResponse,
   PollInteraction,
@@ -13,6 +15,7 @@ import type {
   QuizInteraction,
   HostPreset,
   ServerMessage,
+  SessionMetrics,
   SessionSnapshot,
   SessionStatus,
   VoiceSessionState
@@ -30,28 +33,45 @@ type RoomState = {
     | ReactionsInteraction
     | OpenTextInteraction
     | CountdownInteraction
-    | SlideDeckInteraction
     | null;
+  /** Independent slide deck — persists while non-slide interactions run. */
+  currentSlideDeck: SlideDeckInteraction | null;
   participants: Map<string, string>;
+  uniqueParticipantIds: Set<string>;
   hosts: Set<string>;
+  peakConcurrentParticipants: number;
   history: SessionHistoryEntry[];
+  sessionMetrics: SessionMetrics;
   hostPresets: HostPreset[];
   voiceSession: VoiceSessionState;
   lastResponseByParticipant: Map<string, string>;
   reactionTimestamps: Map<string, number[]>;
   lastNudgeAt: number | null;
+  lastActiveSlideIndex: number | null;
 };
 
 function createEmptyState(sessionCode: string): RoomState {
+  const createdAt = new Date().toISOString();
   return {
     sessionCode,
     status: "lobby",
-    createdAt: new Date().toISOString(),
+    createdAt,
     hostToken: null,
     currentInteraction: null,
+    currentSlideDeck: null,
     participants: new Map(),
+    uniqueParticipantIds: new Set(),
     hosts: new Set(),
+    peakConcurrentParticipants: 0,
     history: [],
+    sessionMetrics: {
+      sessionCode,
+      startedAt: createdAt,
+      endedAt: null,
+      totalUniqueParticipants: 0,
+      peakConcurrentParticipants: 0,
+      interactionMetrics: []
+    },
     hostPresets: [],
     voiceSession: {
       enabled: false,
@@ -61,7 +81,8 @@ function createEmptyState(sessionCode: string): RoomState {
     },
     lastResponseByParticipant: new Map(),
     reactionTimestamps: new Map(),
-    lastNudgeAt: null
+    lastNudgeAt: null,
+    lastActiveSlideIndex: null
   };
 }
 
@@ -70,6 +91,7 @@ function snapshotFromState(state: RoomState): SessionSnapshot {
     sessionCode: state.sessionCode,
     status: state.status,
     currentInteraction: state.currentInteraction,
+    currentSlideDeck: state.currentSlideDeck,
     participantCount: state.participants.size,
     activeHosts: state.hosts.size,
     createdAt: state.createdAt
@@ -78,6 +100,47 @@ function snapshotFromState(state: RoomState): SessionSnapshot {
 
 function serialize(message: ServerMessage) {
   return JSON.stringify(message);
+}
+
+function getInteractionPromptText(
+  interaction:
+    | PromptInteraction
+    | PollInteraction
+    | QuizInteraction
+    | ReactionsInteraction
+    | OpenTextInteraction
+    | CountdownInteraction
+    | SlideDeckInteraction
+) {
+  switch (interaction.type) {
+    case "prompt":
+      return interaction.payload.text;
+    case "poll":
+    case "quiz":
+      return interaction.payload.question;
+    case "reactions":
+      return interaction.payload.prompt;
+    case "open_text":
+      return interaction.payload.prompt;
+    case "countdown":
+      return interaction.payload.label;
+    case "slides":
+      return interaction.payload.title ?? "Presentation";
+  }
+}
+
+function buildOptionBreakdown(
+  interaction: PollInteraction | QuizInteraction | ReactionsInteraction
+): InteractionMetricOption[] {
+  if (interaction.type === "reactions") {
+    return [];
+  }
+
+  return interaction.payload.options.map((option) => ({
+    optionId: option.id,
+    optionText: option.text,
+    voteCount: interaction.votes[option.id] ?? 0
+  }));
 }
 
 export default class SessionServer implements Party.Server {
@@ -91,12 +154,20 @@ export default class SessionServer implements Party.Server {
   }
 
   async onStart() {
+    const createdAt = await this.room.storage.get<string>("createdAt");
     const status = await this.room.storage.get<SessionStatus>("status");
     const hostToken = await this.room.storage.get<string>("hostToken");
     const history = await this.room.storage.get<SessionHistoryEntry[]>("history");
+    const sessionMetrics = await this.room.storage.get<SessionMetrics>("sessionMetrics");
+    const uniqueParticipantIds = await this.room.storage.get<string[]>("uniqueParticipantIds");
     const hostPresets = await this.room.storage.get<HostPreset[]>("hostPresets");
     const voiceSession = await this.room.storage.get<VoiceSessionState>("voiceSession");
+    const lastActiveSlideIndex = await this.room.storage.get<number>("lastActiveSlideIndex");
+    const currentSlideDeck = await this.room.storage.get<SlideDeckInteraction>("currentSlideDeck");
 
+    if (createdAt) {
+      this.state.createdAt = createdAt;
+    }
     if (status) {
       this.state.status = status;
     }
@@ -106,12 +177,215 @@ export default class SessionServer implements Party.Server {
     if (history) {
       this.state.history = history;
     }
+    if (sessionMetrics) {
+      this.state.sessionMetrics = sessionMetrics;
+      this.state.peakConcurrentParticipants = sessionMetrics.peakConcurrentParticipants;
+    }
+    if (uniqueParticipantIds) {
+      this.state.uniqueParticipantIds = new Set(uniqueParticipantIds);
+      this.state.sessionMetrics.totalUniqueParticipants = this.state.uniqueParticipantIds.size;
+    }
     if (hostPresets) {
       this.state.hostPresets = hostPresets;
     }
     if (voiceSession) {
       this.state.voiceSession = voiceSession;
     }
+    if (typeof lastActiveSlideIndex === "number") {
+      this.state.lastActiveSlideIndex = lastActiveSlideIndex;
+    }
+    if (currentSlideDeck) {
+      this.state.currentSlideDeck = currentSlideDeck;
+    }
+  }
+
+  private async persistMetrics() {
+    await Promise.all([
+      this.room.storage.put("sessionMetrics", this.state.sessionMetrics),
+      this.room.storage.put("uniqueParticipantIds", Array.from(this.state.uniqueParticipantIds)),
+      this.room.storage.put("lastActiveSlideIndex", this.state.lastActiveSlideIndex),
+      this.room.storage.put("currentSlideDeck", this.state.currentSlideDeck)
+    ]);
+  }
+
+  private beginInteractionMetric(
+    interaction:
+      | PromptInteraction
+      | PollInteraction
+      | QuizInteraction
+      | ReactionsInteraction
+      | OpenTextInteraction
+      | CountdownInteraction
+      | SlideDeckInteraction
+  ) {
+    const participantsConnectedAtLaunch = this.state.participants.size;
+    const metric: InteractionMetric = {
+      interactionId: interaction.id,
+      interactionType: interaction.type,
+      promptText: getInteractionPromptText(interaction),
+      slideIndexAtLaunch:
+        interaction.type === "slides"
+          ? interaction.payload.currentSlideIndex
+          : this.state.lastActiveSlideIndex,
+      participantsConnectedAtLaunch,
+      totalResponsesReceived: 0,
+      responseRate: 0,
+      optionBreakdown:
+        interaction.type === "poll" || interaction.type === "quiz" || interaction.type === "reactions"
+          ? buildOptionBreakdown(interaction)
+          : [],
+      openTextResponses: [],
+      startedAt: interaction.startedAt,
+      endedAt: null,
+      durationSeconds: null
+    };
+
+    this.state.sessionMetrics.interactionMetrics = [
+      ...this.state.sessionMetrics.interactionMetrics,
+      metric
+    ];
+  }
+
+  private updateCurrentInteractionMetric(
+    interactionId: string,
+    updater: (metric: InteractionMetric) => InteractionMetric
+  ) {
+    this.state.sessionMetrics.interactionMetrics = this.state.sessionMetrics.interactionMetrics.map((metric) =>
+      metric.interactionId === interactionId ? updater(metric) : metric
+    );
+  }
+
+  private refreshMetricFromInteraction(
+    interaction:
+      | PromptInteraction
+      | PollInteraction
+      | QuizInteraction
+      | ReactionsInteraction
+      | OpenTextInteraction
+      | CountdownInteraction
+      | SlideDeckInteraction
+  ) {
+    this.updateCurrentInteractionMetric(interaction.id, (metric) => {
+      if (interaction.type === "poll" || interaction.type === "quiz") {
+        const optionBreakdown = buildOptionBreakdown(interaction);
+        const totalResponsesReceived = optionBreakdown.reduce((sum, option) => sum + option.voteCount, 0);
+        return {
+          ...metric,
+          optionBreakdown,
+          totalResponsesReceived,
+          responseRate:
+            metric.participantsConnectedAtLaunch > 0
+              ? totalResponsesReceived / metric.participantsConnectedAtLaunch
+              : 0
+        };
+      }
+
+      if (interaction.type === "reactions") {
+        const totalResponsesReceived = Object.values(interaction.reactionCounts).reduce(
+          (sum, count) => sum + count,
+          0
+        );
+        return {
+          ...metric,
+          totalResponsesReceived,
+          responseRate:
+            metric.participantsConnectedAtLaunch > 0
+              ? totalResponsesReceived / metric.participantsConnectedAtLaunch
+              : 0
+        };
+      }
+
+      if (interaction.type === "open_text") {
+        return {
+          ...metric,
+          totalResponsesReceived: interaction.responseCount,
+          responseRate:
+            metric.participantsConnectedAtLaunch > 0
+              ? interaction.responseCount / metric.participantsConnectedAtLaunch
+              : 0,
+          openTextResponses: interaction.responses.map((response) => response.text)
+        };
+      }
+
+      return metric;
+    });
+  }
+
+  private finalizeInteractionMetric(
+    interaction:
+      | PromptInteraction
+      | PollInteraction
+      | QuizInteraction
+      | ReactionsInteraction
+      | OpenTextInteraction
+      | CountdownInteraction
+      | SlideDeckInteraction,
+    endedAt: string
+  ) {
+    this.refreshMetricFromInteraction(interaction);
+    this.updateCurrentInteractionMetric(interaction.id, (metric) => ({
+      ...metric,
+      endedAt,
+      durationSeconds: Math.max(
+        0,
+        Math.round((new Date(endedAt).getTime() - new Date(metric.startedAt).getTime()) / 1000)
+      )
+    }));
+  }
+
+  private buildSessionMetricsSnapshot(endedAt: string): SessionMetrics {
+    const interactionMetrics = this.state.sessionMetrics.interactionMetrics.map((metric) => ({ ...metric }));
+    const currentInteraction = this.state.currentInteraction;
+
+    if (currentInteraction) {
+      const currentMetricIndex = interactionMetrics.findIndex(
+        (metric) => metric.interactionId === currentInteraction.id
+      );
+
+      if (currentMetricIndex >= 0) {
+        const metric = interactionMetrics[currentMetricIndex];
+        let totalResponsesReceived = metric.totalResponsesReceived;
+        let optionBreakdown = metric.optionBreakdown;
+        let openTextResponses = metric.openTextResponses;
+
+        if (currentInteraction.type === "poll" || currentInteraction.type === "quiz") {
+          optionBreakdown = buildOptionBreakdown(currentInteraction);
+          totalResponsesReceived = optionBreakdown.reduce((sum, option) => sum + option.voteCount, 0);
+        } else if (currentInteraction.type === "reactions") {
+          totalResponsesReceived = Object.values(currentInteraction.reactionCounts).reduce(
+            (sum, count) => sum + count,
+            0
+          );
+        } else if (currentInteraction.type === "open_text") {
+          totalResponsesReceived = currentInteraction.responseCount;
+          openTextResponses = currentInteraction.responses.map((response) => response.text);
+        }
+
+        interactionMetrics[currentMetricIndex] = {
+          ...metric,
+          optionBreakdown,
+          openTextResponses,
+          totalResponsesReceived,
+          responseRate:
+            metric.participantsConnectedAtLaunch > 0
+              ? totalResponsesReceived / metric.participantsConnectedAtLaunch
+              : 0,
+          endedAt,
+          durationSeconds: Math.max(
+            0,
+            Math.round((new Date(endedAt).getTime() - new Date(metric.startedAt).getTime()) / 1000)
+          )
+        };
+      }
+    }
+
+    return {
+      ...this.state.sessionMetrics,
+      endedAt,
+      totalUniqueParticipants: this.state.uniqueParticipantIds.size,
+      peakConcurrentParticipants: this.state.peakConcurrentParticipants,
+      interactionMetrics
+    };
   }
 
   private buildHistoryEntry(
@@ -244,9 +518,10 @@ export default class SessionServer implements Party.Server {
 
     const endedAt = new Date().toISOString();
     current.closedAt = endedAt;
+    this.finalizeInteractionMetric(current, endedAt);
     const entry = this.buildHistoryEntry(current, endedAt);
     this.state.history = [entry, ...this.state.history].slice(0, SessionServer.MAX_HISTORY_ENTRIES);
-    await this.room.storage.put("history", this.state.history);
+    await Promise.all([this.room.storage.put("history", this.state.history), this.persistMetrics()]);
   }
 
   private bumpAlarm() {
@@ -263,6 +538,7 @@ export default class SessionServer implements Party.Server {
 
     // No host connected or session was inactive: close it down and wipe storage to save DB space
     this.state.status = "closed";
+    this.state.sessionMetrics.endedAt = new Date().toISOString();
     this.broadcast({
       type: "server.session_snapshot",
       snapshot: snapshotFromState(this.state)
@@ -317,6 +593,14 @@ export default class SessionServer implements Party.Server {
         }
 
         this.state.participants.set(sender.id, message.participantId);
+        this.state.uniqueParticipantIds.add(message.participantId);
+        this.state.peakConcurrentParticipants = Math.max(
+          this.state.peakConcurrentParticipants,
+          this.state.participants.size
+        );
+        this.state.sessionMetrics.totalUniqueParticipants = this.state.uniqueParticipantIds.size;
+        this.state.sessionMetrics.peakConcurrentParticipants = this.state.peakConcurrentParticipants;
+        await this.persistMetrics();
         sender.send(
           serialize({
             type: "server.session_snapshot",
@@ -412,8 +696,10 @@ export default class SessionServer implements Party.Server {
           closedAt: null
         };
         this.state.status = "active";
+        this.state.sessionMetrics.endedAt = null;
+        this.beginInteractionMetric(this.state.currentInteraction);
         this.state.lastResponseByParticipant.clear(); // Reset rate limit for new interaction
-        await this.room.storage.put("status", "active");
+        await Promise.all([this.room.storage.put("status", "active"), this.persistMetrics()]);
         this.broadcast({
           type: "server.interaction_started",
           interaction: this.state.currentInteraction
@@ -450,8 +736,10 @@ export default class SessionServer implements Party.Server {
           closedAt: null
         };
         this.state.status = "active";
+        this.state.sessionMetrics.endedAt = null;
+        this.beginInteractionMetric(this.state.currentInteraction);
         this.state.lastResponseByParticipant.clear(); // Reset rate limit for new interaction
-        await this.room.storage.put("status", "active");
+        await Promise.all([this.room.storage.put("status", "active"), this.persistMetrics()]);
         this.broadcast({
           type: "server.interaction_started",
           interaction: this.state.currentInteraction
@@ -495,8 +783,10 @@ export default class SessionServer implements Party.Server {
           closedAt: null
         };
         this.state.status = "active";
+        this.state.sessionMetrics.endedAt = null;
+        this.beginInteractionMetric(this.state.currentInteraction);
         this.state.lastResponseByParticipant.clear();
-        await this.room.storage.put("status", "active");
+        await Promise.all([this.room.storage.put("status", "active"), this.persistMetrics()]);
         this.broadcast({
           type: "server.interaction_started",
           interaction: this.state.currentInteraction
@@ -529,8 +819,10 @@ export default class SessionServer implements Party.Server {
           closedAt: null
         };
         this.state.status = "active";
+        this.state.sessionMetrics.endedAt = null;
+        this.beginInteractionMetric(this.state.currentInteraction);
         this.state.reactionTimestamps.clear();
-        await this.room.storage.put("status", "active");
+        await Promise.all([this.room.storage.put("status", "active"), this.persistMetrics()]);
         this.broadcast({
           type: "server.interaction_started",
           interaction: this.state.currentInteraction
@@ -557,8 +849,10 @@ export default class SessionServer implements Party.Server {
           closedAt: null
         };
         this.state.status = "active";
+        this.state.sessionMetrics.endedAt = null;
+        this.beginInteractionMetric(this.state.currentInteraction);
         this.state.lastResponseByParticipant.clear();
-        await this.room.storage.put("status", "active");
+        await Promise.all([this.room.storage.put("status", "active"), this.persistMetrics()]);
         this.broadcast({
           type: "server.interaction_started",
           interaction: this.state.currentInteraction
@@ -597,7 +891,9 @@ export default class SessionServer implements Party.Server {
           closedAt: null
         };
         this.state.status = "active";
-        await this.room.storage.put("status", "active");
+        this.state.sessionMetrics.endedAt = null;
+        this.beginInteractionMetric(this.state.currentInteraction);
+        await Promise.all([this.room.storage.put("status", "active"), this.persistMetrics()]);
         this.broadcast({
           type: "server.interaction_started",
           interaction: this.state.currentInteraction
@@ -625,9 +921,9 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
-        await this.archiveCurrentInteraction();
-
-        this.state.currentInteraction = {
+        // Slides live in currentSlideDeck — independent of currentInteraction.
+        // Do NOT archive the current interaction; it keeps running in parallel.
+        this.state.currentSlideDeck = {
           id: crypto.randomUUID(),
           type: "slides",
           payload: {
@@ -640,11 +936,18 @@ export default class SessionServer implements Party.Server {
           startedAt: new Date().toISOString(),
           closedAt: null
         };
-        this.state.status = "active";
-        await this.room.storage.put("status", "active");
+        this.state.lastActiveSlideIndex = 0;
+        this.state.sessionMetrics.endedAt = null;
+        this.beginInteractionMetric(this.state.currentSlideDeck);
+        await this.persistMetrics();
         this.broadcast({
-          type: "server.interaction_started",
-          interaction: this.state.currentInteraction
+          type: "server.slide_deck_updated",
+          slideDeck: this.state.currentSlideDeck
+        });
+        // Also send a full snapshot so the host dashboard refreshes correctly
+        this.broadcast({
+          type: "server.session_snapshot",
+          snapshot: snapshotFromState(this.state)
         });
         return;
       }
@@ -683,6 +986,7 @@ export default class SessionServer implements Party.Server {
 
         poll.votes[message.optionId] = (poll.votes[message.optionId] ?? 0) + 1;
         this.recordResponse(participantId);
+        this.refreshMetricFromInteraction(poll);
 
         // Debounced broadcast — flush immediately for now, can batch later
         this.broadcast({
@@ -702,6 +1006,7 @@ export default class SessionServer implements Party.Server {
 
         quiz.votes[message.optionId] = (quiz.votes[message.optionId] ?? 0) + 1;
         this.recordResponse(participantId);
+        this.refreshMetricFromInteraction(quiz);
 
         this.broadcast({
           type: "server.quiz_votes_updated",
@@ -719,6 +1024,7 @@ export default class SessionServer implements Party.Server {
         if (!this.isWithinReactionRateLimit(participantId)) return;
 
         reactions.reactionCounts[message.emoji] = (reactions.reactionCounts[message.emoji] ?? 0) + 1;
+        this.refreshMetricFromInteraction(reactions);
         this.broadcast({
           type: "server.reactions_updated",
           reactionCounts: { ...reactions.reactionCounts },
@@ -749,6 +1055,7 @@ export default class SessionServer implements Party.Server {
         );
         interaction.responseCount += 1;
         this.recordResponse(participantId);
+        this.refreshMetricFromInteraction(interaction);
 
         this.broadcast({
           type: "server.open_text_responses_updated",
@@ -758,11 +1065,10 @@ export default class SessionServer implements Party.Server {
         return;
       }
       case "client.set_slide": {
-        const interaction = this.state.currentInteraction;
+        const deck = this.state.currentSlideDeck;
         if (
           !this.canControlRoom(sender.id, message.hostToken) ||
-          !interaction ||
-          interaction.type !== "slides"
+          !deck
         ) {
           sender.send(serialize({ type: "server.error", message: "Slide update rejected." }));
           return;
@@ -772,20 +1078,22 @@ export default class SessionServer implements Party.Server {
         if (
           !Number.isFinite(index) ||
           index < 0 ||
-          index >= interaction.payload.totalSlides
+          index >= deck.payload.totalSlides
         ) {
           sender.send(serialize({ type: "server.error", message: "Slide index out of range." }));
           return;
         }
 
-        interaction.payload.currentSlideIndex = index;
+        deck.payload.currentSlideIndex = index;
+        this.state.lastActiveSlideIndex = index;
+        await this.persistMetrics();
         this.broadcast({
           type: "server.slide_set",
           index
         });
         this.broadcast({
-          type: "server.interaction_started",
-          interaction
+          type: "server.slide_deck_updated",
+          slideDeck: deck
         });
         return;
       }
@@ -814,7 +1122,7 @@ export default class SessionServer implements Party.Server {
         return;
       }
 
-      case "client.clear_interaction":
+      case "client.clear_interaction": {
         if (!this.canControlRoom(sender.id, message.hostToken)) {
           sender.send(serialize({ type: "server.error", message: "Clear interaction rejected." }));
           return;
@@ -823,8 +1131,9 @@ export default class SessionServer implements Party.Server {
         await this.archiveCurrentInteraction();
 
         this.state.currentInteraction = null;
-        this.state.status = "lobby";
-        await this.room.storage.put("status", "lobby");
+        // If a slide deck is still active, stay "active"; otherwise return to lobby.
+        this.state.status = this.state.currentSlideDeck ? "active" : "lobby";
+        await Promise.all([this.room.storage.put("status", this.state.status), this.persistMetrics()]);
         // Reset per-interaction rate limit state when a new round begins
         this.state.lastResponseByParticipant.clear();
         this.state.reactionTimestamps.clear();
@@ -832,6 +1141,41 @@ export default class SessionServer implements Party.Server {
           type: "server.interaction_cleared"
         });
         return;
+      }
+
+      case "client.close_slide_deck": {
+        if (!this.canControlRoom(sender.id, message.hostToken)) {
+          sender.send(serialize({ type: "server.error", message: "Close slide deck rejected." }));
+          return;
+        }
+
+        const deck = this.state.currentSlideDeck;
+        if (deck) {
+          const endedAt = new Date().toISOString();
+          deck.closedAt = endedAt;
+          this.finalizeInteractionMetric(deck, endedAt);
+          const entry = this.buildHistoryEntry(deck, endedAt);
+          this.state.history = [entry, ...this.state.history].slice(0, SessionServer.MAX_HISTORY_ENTRIES);
+        }
+
+        this.state.currentSlideDeck = null;
+        this.state.lastActiveSlideIndex = null;
+        // Only revert to lobby if there's also no active non-slide interaction
+        if (!this.state.currentInteraction) {
+          this.state.status = "lobby";
+          await this.room.storage.put("status", "lobby");
+        }
+        await Promise.all([this.room.storage.put("history", this.state.history), this.persistMetrics()]);
+        this.broadcast({
+          type: "server.slide_deck_updated",
+          slideDeck: null
+        });
+        this.broadcast({
+          type: "server.session_snapshot",
+          snapshot: snapshotFromState(this.state)
+        });
+        return;
+      }
 
       case "client.close_session":
         if (!this.canControlRoom(sender.id, message.hostToken)) {
@@ -841,7 +1185,18 @@ export default class SessionServer implements Party.Server {
 
         await this.archiveCurrentInteraction();
 
+        // Also finalize the slide deck if one is running
+        if (this.state.currentSlideDeck) {
+          const endedAt = new Date().toISOString();
+          this.state.currentSlideDeck.closedAt = endedAt;
+          this.finalizeInteractionMetric(this.state.currentSlideDeck, endedAt);
+          const entry = this.buildHistoryEntry(this.state.currentSlideDeck, endedAt);
+          this.state.history = [entry, ...this.state.history].slice(0, SessionServer.MAX_HISTORY_ENTRIES);
+          this.state.currentSlideDeck = null;
+        }
+
         this.state.status = "closed";
+        this.state.sessionMetrics.endedAt = new Date().toISOString();
         this.broadcast({
           type: "server.session_snapshot",
           snapshot: snapshotFromState(this.state)
@@ -885,11 +1240,15 @@ export default class SessionServer implements Party.Server {
         };
 
         await Promise.all([
+          this.room.storage.put("createdAt", this.state.createdAt),
           this.room.storage.put("hostToken", payload.hostToken),
           this.room.storage.put("status", "lobby"),
           this.room.storage.put("history", this.state.history),
+          this.room.storage.put("sessionMetrics", this.state.sessionMetrics),
+          this.room.storage.put("uniqueParticipantIds", []),
           this.room.storage.put("hostPresets", this.state.hostPresets),
-          this.room.storage.put("voiceSession", this.state.voiceSession)
+          this.room.storage.put("voiceSession", this.state.voiceSession),
+          this.room.storage.put("lastActiveSlideIndex", this.state.lastActiveSlideIndex)
         ]);
 
         return Response.json(snapshotFromState(this.state), { status: 201 });
@@ -904,6 +1263,14 @@ export default class SessionServer implements Party.Server {
           sessionCode: this.room.id,
           history: this.state.history
         });
+      }
+
+      if (payload.action === "get_metrics") {
+        if (!payload.hostToken || !this.isValidHost(payload.hostToken)) {
+          return Response.json({ error: "Unauthorized metrics request." }, { status: 403 });
+        }
+
+        return Response.json(this.buildSessionMetricsSnapshot(new Date().toISOString()));
       }
 
       return Response.json({ error: "Invalid session action." }, { status: 400 });

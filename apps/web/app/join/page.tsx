@@ -1,6 +1,12 @@
+import { Metadata } from "next";
 import Link from "next/link";
 
 import { JoinForm } from "@/components/join-form";
+
+export const metadata: Metadata = {
+  title: "Join Session — LocalHost",
+  description: "Enter a code to join the live session."
+};
 
 export default async function JoinPage({
   searchParams
@@ -51,19 +57,16 @@ export default async function JoinPage({
               </div>
             </div>
 
-            <div className="mt-12 border-t border-black/5 pt-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] soft-text">
-                Hosting an event?
+            <div className="mt-10 border-t border-black/5 pt-6">
+              <p className="text-xs soft-text">
+                Hosting?{" "}
+                <Link
+                  className="font-semibold text-slate-500 underline underline-offset-2 transition hover:text-slate-800"
+                  href="/host/new"
+                >
+                  Start a new session
+                </Link>
               </p>
-              <Link
-                className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-black"
-                href="/host/new"
-              >
-                Start a new session
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
-              </Link>
             </div>
           </section>
         </div>
