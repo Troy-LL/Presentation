@@ -1,7 +1,7 @@
 "use client";
 
 import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useCallback, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import type {
@@ -41,6 +41,65 @@ type SlideTrigger =
 const EMPTY_OPTIONS = ["", "", ""];
 const SESSION_END_AUTO_DISMISS_SECONDS = 30;
 
+type HostAnalytics = {
+  totalResponses: string;
+  participationRate: string;
+  topSignal: string;
+  engagement: string;
+};
+
+function getTopTextOption<T extends { id: string; text: string }>(
+  options: T[],
+  counts: Record<string, number>
+) {
+  return options.reduce<{ text: string; count: number } | null>((best, option) => {
+    const count = counts[option.id] ?? 0;
+    if (!best || count > best.count) return { text: option.text, count };
+    return best;
+  }, null);
+}
+
+function getTopEmoji(counts: Record<string, number>) {
+  return Object.entries(counts).reduce<{ emoji: string; count: number } | null>((best, [emoji, count]) => {
+    if (!best || count > best.count) return { emoji, count };
+    return best;
+  }, null);
+}
+
+function getRoomStateLabel(snapshot: SessionSnapshot | null) {
+  if (!snapshot) return "Lobby idle";
+  if (snapshot.status === "closed") return "Closed";
+  if (snapshot.status !== "active") return "Lobby idle";
+
+  const interaction = snapshot.currentInteraction;
+  if (!interaction) return "Prompt live";
+
+  switch (interaction.type) {
+    case "poll":
+      return "Poll live";
+    case "quiz":
+      return "Quiz live";
+    case "reactions":
+      return "Reactions live";
+    case "open_text":
+      return "Open text live";
+    case "countdown":
+      return "Countdown live";
+    case "slides":
+      return "Slides live";
+    default:
+      return "Prompt live";
+  }
+}
+
+function parseReactionEmojis(input: string) {
+  return input
+    .split(/\s+/)
+    .map((emoji) => emoji.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
 function statLabel(value: string, label: string) {
   return (
     <div className="card-hover flex h-full flex-col overflow-hidden rounded-[22px] border border-black/8 bg-white/80 p-5">
@@ -60,7 +119,7 @@ function analyticsCard(label: string, value: string, hint: string) {
   );
 }
 
-function calculateHostAnalytics(snapshot: SessionSnapshot | null) {
+function calculateHostAnalytics(snapshot: SessionSnapshot | null): HostAnalytics {
   if (!snapshot) {
     return {
       totalResponses: "0",
@@ -84,11 +143,7 @@ function calculateHostAnalytics(snapshot: SessionSnapshot | null) {
 
   if (interaction.type === "poll") {
     const totalVotes = Object.values(interaction.votes).reduce((acc, count) => acc + count, 0);
-    const topOption = interaction.payload.options.reduce<{ text: string; count: number } | null>((best, option) => {
-      const count = interaction.votes[option.id] ?? 0;
-      if (!best || count > best.count) return { text: option.text, count };
-      return best;
-    }, null);
+    const topOption = getTopTextOption(interaction.payload.options, interaction.votes);
     const rate = participants > 0 ? `${Math.min(100, Math.round((totalVotes / participants) * 100))}%` : "-";
 
     return {
@@ -101,11 +156,7 @@ function calculateHostAnalytics(snapshot: SessionSnapshot | null) {
 
   if (interaction.type === "quiz") {
     const totalAnswers = Object.values(interaction.votes).reduce((acc, count) => acc + count, 0);
-    const topOption = interaction.payload.options.reduce<{ text: string; count: number } | null>((best, option) => {
-      const count = interaction.votes[option.id] ?? 0;
-      if (!best || count > best.count) return { text: option.text, count };
-      return best;
-    }, null);
+    const topOption = getTopTextOption(interaction.payload.options, interaction.votes);
     const rate = participants > 0 ? `${Math.min(100, Math.round((totalAnswers / participants) * 100))}%` : "-";
 
     return {
@@ -118,13 +169,7 @@ function calculateHostAnalytics(snapshot: SessionSnapshot | null) {
 
   if (interaction.type === "reactions") {
     const totalReactions = Object.values(interaction.reactionCounts).reduce((acc, count) => acc + count, 0);
-    const topEmoji = Object.entries(interaction.reactionCounts).reduce<{ emoji: string; count: number } | null>(
-      (best, [emoji, count]) => {
-        if (!best || count > best.count) return { emoji, count };
-        return best;
-      },
-      null
-    );
+    const topEmoji = getTopEmoji(interaction.reactionCounts);
     const avgPerParticipant = participants > 0 ? (totalReactions / participants).toFixed(1) : "0.0";
     const proxyResponders = Math.min(participants, totalReactions);
 
@@ -151,7 +196,12 @@ function calculateHostAnalytics(snapshot: SessionSnapshot | null) {
   return {
     totalResponses: "0",
     participationRate: participants > 0 ? "0%" : "-",
-    topSignal: interaction.type === "countdown" ? "Timer running" : interaction.type === "slides" ? "Slides live" : "Prompt live",
+    topSignal:
+      interaction.type === "countdown"
+        ? "Timer running"
+        : interaction.type === "slides"
+          ? "Slides live"
+          : "Prompt live",
     engagement: participants > 0 ? String(participants) : "0"
   };
 }
@@ -179,11 +229,11 @@ export function HostConsole({
   const [sessionEndBusy, setSessionEndBusy] = useState(false);
   const [sessionEndCountdown, setSessionEndCountdown] = useState(SESSION_END_AUTO_DISMISS_SECONDS);
 
-  // ── Mode switcher & Layout ───────────────────────────────────────────────
+  // â”€â”€ Mode switcher & Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [mode, setMode] = useState<Mode>("prompt");
   const { layoutMode, variant, setVariant } = useHostLayout();
 
-  // ── Prompt state ─────────────────────────────────────────────────────────
+  // â”€â”€ Prompt state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [draft, setDraft] = useState("");
   const [presets, setPresets] = useState<HostPreset[]>([]);
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
@@ -191,7 +241,7 @@ export function HostConsole({
   const [editingTriggerConfidence, setEditingTriggerConfidence] = useState(0.75);
   const [highlightedPresetId, setHighlightedPresetId] = useState<string | null>(null);
 
-  // ── Poll state ───────────────────────────────────────────────────────────
+  // â”€â”€ Poll state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState<string[]>(EMPTY_OPTIONS);
   const [quizQuestion, setQuizQuestion] = useState("");
@@ -240,7 +290,7 @@ export function HostConsole({
     lastTriggeredSlideRef.current = null;
   };
 
-  // ── Voice Activation state ───────────────────────────────────────────────
+  // â”€â”€ Voice Activation state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [voiceConfidence, setVoiceConfidence] = useState(0.75);
   const [voiceMode, setVoiceMode] = useState<VoiceListeningMode>("continuous");
@@ -250,7 +300,7 @@ export function HostConsole({
   const [showGuide, setShowGuide] = useState(false);
   const isCloudMode = process.env.NEXT_PUBLIC_MODE === "cloud";
 
-  // ── Presets persistence ──────────────────────────────────────────────────
+  // â”€â”€ Presets persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!isCloudMode) {
       const savedPresets = localStorage.getItem("host-presets-v2");
@@ -327,7 +377,7 @@ export function HostConsole({
     persistPresets(next);
   };
 
-  // ── Token resolution ─────────────────────────────────────────────────────
+  // â”€â”€ Token resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (typeof window === "undefined") return;
     const storageKey = `host-token:${sessionCode}`;
@@ -341,7 +391,7 @@ export function HostConsole({
     setLoadError("This host room needs a valid host link. Start from /host/new to create one.");
   }, [sessionCode, tokenFromUrl]);
 
-  // ── Initial snapshot fetch ────────────────────────────────────────────────
+  // â”€â”€ Initial snapshot fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let active = true;
     async function load() {
@@ -427,9 +477,9 @@ export function HostConsole({
     updateVoiceSession
   ]);
 
-  // ── Voice Commands ───────────────────────────────────────────────────────
+  // â”€â”€ Voice Commands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const voiceCommands = useMemo(() => {
-    // Built-in global commands — ordered longest phrase first to prevent short-phrase shadowing
+    // Built-in global commands â€” ordered longest phrase first to prevent short-phrase shadowing
     const globals = [
       {
         id: "global:back_to_lobby",
@@ -506,7 +556,7 @@ export function HostConsole({
     }
   });
 
-  // ── Prompt before closing ────────────────────────────────────────────────
+  // â”€â”€ Prompt before closing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       // Prompt warning unless explicitly closed
@@ -671,7 +721,7 @@ export function HostConsole({
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(true);
+    setIsDragging(false);
   };
 
   const handleDrop = async (e: React.DragEvent) => {
@@ -934,12 +984,12 @@ export function HostConsole({
     return () => window.clearInterval(timer);
   }, [sessionEndBusy, sessionEndModalOpen, sessionEndPhase]);
 
-  // ── Loading / error states ────────────────────────────────────────────────
+  // â”€â”€ Loading / error states â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (loading) {
     return (
       <main className="app-shell flex items-center justify-center px-6 py-10">
         <div className="panel w-full max-w-xl rounded-[28px] p-8 text-center">
-          <p className="soft-text">Loading session…</p>
+          <p className="soft-text">Loading session...</p>
         </div>
       </main>
     );
@@ -969,9 +1019,21 @@ export function HostConsole({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Session {sessionCode}</h1>
           <div className="mt-1 flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${connectionState === "connected" ? "bg-[var(--success)]" : "bg-amber-400"}`} />
+            <div
+              className={`h-2 w-2 rounded-full ${
+                snapshot.status === "closed"
+                  ? "bg-slate-400"
+                  : connectionState === "connected"
+                    ? "bg-[var(--success)]"
+                    : "bg-amber-400"
+              }`}
+            />
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              {connectionState === "connected" ? "Live" : "Connecting..."}
+              {snapshot.status === "closed"
+                ? "Ended"
+                : connectionState === "connected"
+                  ? "Live"
+                  : "Connecting..."}
             </span>
           </div>
         </div>
@@ -1105,223 +1167,96 @@ export function HostConsole({
           <div className="flex flex-col gap-6 w-full xl:flex-row min-w-0">
             <div className="flex flex-col gap-6 flex-1 min-w-0">
 
-              {/* Active poll live view replaces the control panel */}
-              {activePoll ? (
+              {/* ── Active interaction live results — always shown when an interaction runs ── */}
+              {activePoll && (
                 <HostPollResults
                   onClear={clearInteraction}
                   onReveal={revealPollResults}
                   poll={activePoll}
                 />
-              ) : activeQuiz ? (
+              )}
+              {activeQuiz && (
                 <HostQuizResults
                   onClear={clearInteraction}
                   onReveal={revealQuizAnswer}
                   quiz={activeQuiz}
                 />
-              ) : activeReactions ? (
+              )}
+              {activeReactions && (
                 <HostReactionResults
                   latestReactionEmoji={latestReactionEmoji}
                   onClear={clearInteraction}
                   reactions={activeReactions}
                 />
-              ) : activeOpenText ? (
+              )}
+              {activeOpenText && (
                 <HostOpenTextResults interaction={activeOpenText} onClear={clearInteraction} />
-              ) : activeCountdown ? (
+              )}
+              {activeCountdown && (
                 <HostCountdownResults interaction={activeCountdown} onClear={clearInteraction} />
-              ) : activeSlides ? (
-                <div className="panel flex min-h-[600px] flex-col rounded-[28px] p-6 md:p-8">
-                  <div className="flex-1 min-w-0">
-                  <p className="text-sm uppercase tracking-[0.22em] soft-text">Slides live</p>
-                  <h2 className="mt-2 text-xl font-semibold tracking-tight truncate">
-                    {activeSlides.payload.title ?? "Presentation"}
-                  </h2>
-                  <p className="mt-2 text-sm soft-text">
-                    Slide {activeSlides.payload.currentSlideIndex + 1} of {activeSlides.payload.totalSlides}
-                  </p>
-                  <div className="mt-6 flex flex-wrap items-center gap-3">
+              )}
+
+              {/* ── Persistent slide strip — visible when slides are active, never blocks interaction tools ── */}
+              {activeSlides && (
+                <div className="panel rounded-[28px] p-5 md:p-6">
+                  <div className="flex items-center justify-between gap-3 min-w-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold uppercase tracking-widest soft-text">Slides live</p>
+                      <p className="mt-1 text-sm font-semibold tracking-tight truncate">
+                        {activeSlides.payload.title ?? "Presentation"}
+                      </p>
+                      <p className="text-xs soft-text">
+                        Slide {activeSlides.payload.currentSlideIndex + 1} of {activeSlides.payload.totalSlides}
+                      </p>
+                    </div>
                     <button
-                      className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-5 text-sm font-semibold"
+                      className="ghost-button inline-flex h-9 shrink-0 items-center justify-center rounded-full px-4 text-sm font-semibold"
+                      onClick={() => { resetSlideLocalState(); closeSlides(); }}
+                      type="button"
+                    >
+                      End slides
+                    </button>
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <button
+                      className="ghost-button inline-flex h-9 items-center justify-center rounded-full px-4 text-sm font-semibold"
                       onClick={prevSlide}
                       type="button"
                     >
-                      Previous
+                      ← Prev
                     </button>
                     <button
-                      className="accent-button inline-flex h-10 items-center justify-center rounded-full px-5 text-sm font-semibold"
+                      className="accent-button inline-flex h-9 items-center justify-center rounded-full px-4 text-sm font-semibold"
                       onClick={nextSlide}
                       type="button"
                     >
-                      Next
+                      Next →
                     </button>
                     <input
-                      className="h-10 w-20 rounded-full border border-black/10 bg-white px-3 text-center text-sm outline-none focus:border-black"
+                      className="h-9 w-16 rounded-full border border-black/10 bg-white px-3 text-center text-sm outline-none focus:border-black"
                       min={1}
+                      max={activeSlides.payload.totalSlides}
                       onChange={(e) => setSlideJumpIndex(Number(e.target.value))}
                       type="number"
                       value={slideJumpIndex}
                     />
                     <button
-                      className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
+                      className="ghost-button inline-flex h-9 items-center justify-center rounded-full px-3 text-sm font-semibold"
                       onClick={() => setSlide(Math.max(0, Math.min(activeSlides.payload.totalSlides - 1, slideJumpIndex - 1)))}
                       type="button"
                     >
                       Go
                     </button>
                   </div>
-                  <p className="mt-3 text-xs soft-text">Use Left/Right arrow keys to navigate.</p>
-                  <div className="mt-6 border-t border-black/5 pt-6">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <label className="flex items-center gap-2 text-sm soft-text">
-                        <input
-                          checked={autoLaunchTriggers}
-                          onChange={(e) => setAutoLaunchTriggers(e.target.checked)}
-                          type="checkbox"
-                        />
-                        Auto-launch mapped interaction
-                      </label>
-                      {slideTriggers[activeSlides.payload.currentSlideIndex] && (
-                        <button
-                          className="accent-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
-                          onClick={() => {
-                            const currentTrigger = slideTriggers[activeSlides.payload.currentSlideIndex];
-                            if (!currentTrigger) return;
-                            if (currentTrigger.type === "prompt") {
-                              startPrompt(currentTrigger.prompt);
-                              return;
-                            }
-                            const validOptions = currentTrigger.options.map((o) => o.trim()).filter(Boolean);
-                            if (!currentTrigger.question.trim() || validOptions.length < 2) return;
-                            startPoll(currentTrigger.question, validOptions);
-                          }}
-                          type="button"
-                        >
-                          Launch mapped interaction now
-                        </button>
-                      )}
-                    </div>
-                    <div className="mt-4 flex w-fit gap-1 rounded-2xl border border-black/8 bg-black/3 p-1">
-                      <button
-                        className={[
-                          "rounded-xl px-3 py-2 text-sm font-semibold transition",
-                          triggerType === "prompt" ? "bg-white shadow-sm" : "text-slate-500 hover:text-slate-800"
-                        ].join(" ")}
-                        onClick={() => setTriggerType("prompt")}
-                        type="button"
-                      >
-                        Prompt trigger
-                      </button>
-                      <button
-                        className={[
-                          "rounded-xl px-3 py-2 text-sm font-semibold transition",
-                          triggerType === "poll" ? "bg-white shadow-sm" : "text-slate-500 hover:text-slate-800"
-                        ].join(" ")}
-                        onClick={() => setTriggerType("poll")}
-                        type="button"
-                      >
-                        Poll trigger
-                      </button>
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <input
-                        className="h-10 w-20 rounded-full border border-black/10 bg-white px-3 text-center text-sm outline-none focus:border-black"
-                        min={1}
-                        onChange={(e) => setTriggerSlideIndex(Number(e.target.value))}
-                        type="number"
-                        value={triggerSlideIndex}
-                      />
-                      {triggerType === "prompt" ? (
-                        <input
-                          className="h-10 min-w-64 flex-1 rounded-full border border-black/10 bg-white px-4 text-sm outline-none focus:border-black"
-                          maxLength={140}
-                          onChange={(e) => setTriggerPromptText(e.target.value)}
-                          placeholder="Prompt mapped to this slide"
-                          value={triggerPromptText}
-                        />
-                      ) : (
-                        <>
-                          <input
-                            className="h-10 min-w-64 flex-1 rounded-full border border-black/10 bg-white px-4 text-sm outline-none focus:border-black"
-                            maxLength={180}
-                            onChange={(e) => setTriggerPollQuestion(e.target.value)}
-                            placeholder="Poll question mapped to this slide"
-                            value={triggerPollQuestion}
-                          />
-                          <input
-                            className="h-10 min-w-64 flex-1 rounded-full border border-black/10 bg-white px-4 text-sm outline-none focus:border-black"
-                            onChange={(e) => setTriggerPollOptionsText(e.target.value)}
-                            placeholder="Poll options (comma-separated)"
-                            value={triggerPollOptionsText}
-                          />
-                        </>
-                      )}
-                      <button
-                          className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
-                        onClick={() => {
-                          const idx = Math.max(0, triggerSlideIndex - 1);
-                          if (triggerType === "prompt") {
-                            if (!triggerPromptText.trim()) return;
-                            setSlideTriggers((current) => ({
-                              ...current,
-                              [idx]: {
-                                type: "prompt",
-                                prompt: triggerPromptText.trim()
-                              }
-                            }));
-                            setTriggerPromptText("");
-                            return;
-                          }
-
-                          const options = triggerPollOptionsText
-                            .split(/[\n,|]/)
-                            .map((option) => option.trim())
-                            .filter(Boolean)
-                            .slice(0, 10);
-                          if (!triggerPollQuestion.trim() || options.length < 2) return;
-                          setSlideTriggers((current) => ({
-                            ...current,
-                            [idx]: {
-                              type: "poll",
-                              question: triggerPollQuestion.trim(),
-                              options
-                            }
-                          }));
-                          setTriggerPollQuestion("");
-                        }}
-                        type="button"
-                      >
-                        Map interaction
-                      </button>
-                      <button
-                        className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
-                        onClick={() => {
-                          const idx = Math.max(0, triggerSlideIndex - 1);
-                          setSlideTriggers((current) => {
-                            if (!(idx in current)) return current;
-                            const next = { ...current };
-                            delete next[idx];
-                            return next;
-                          });
-                        }}
-                        type="button"
-                      >
-                        Clear mapping
-                      </button>
-                    </div>
-                    <p className="mt-3 text-xs soft-text">
-                      Poll options can be comma, pipe, or newline separated. Minimum 2 options.
-                    </p>
-                  </div>
-                  <div className="mt-6 border-t border-black/5 pt-6">
-                    <p className="text-xs uppercase tracking-[0.2em] soft-text">Filmstrip</p>
-                    {slideThumbLoading && <p className="mt-2 text-sm soft-text">Generating thumbnails...</p>}
-                    <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                  {slideThumbnails.length > 0 && (
+                    <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
                       {slideThumbnails.map((thumb, index) => {
-                        const isActive = index === activeSlides.payload.currentSlideIndex;
+                        const isActiveThumbnail = index === activeSlides.payload.currentSlideIndex;
                         return (
                           <button
                             className={[
                               "shrink-0 overflow-hidden rounded-lg border transition",
-                              isActive ? "border-[var(--accent)]" : "border-black/10 hover:border-black/30"
+                              isActiveThumbnail ? "border-[var(--accent)]" : "border-black/10 hover:border-black/30"
                             ].join(" ")}
                             key={`${activeSlides.payload.deckId}:${index}`}
                             onClick={() => setSlide(index)}
@@ -1330,34 +1265,24 @@ export function HostConsole({
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               alt={`Slide ${index + 1}`}
-                              className="h-16 w-28 object-cover"
+                              className="h-14 w-24 object-cover"
                               src={thumb}
                             />
                           </button>
                         );
                       })}
                     </div>
-                  </div>
+                  )}
+                  {slideThumbLoading && <p className="mt-2 text-xs soft-text">Generating thumbnails…</p>}
                 </div>
-                  <div className="mt-6 border-t border-black/5 pt-6">
-                    <button
-                      className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-5 text-sm font-semibold"
-                      onClick={() => {
-                        resetSlideLocalState();
-                        closeSlides();
-                      }}
-                      type="button"
-                    >
-                      End slides
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="panel flex min-h-[600px] flex-col rounded-[28px] p-6 md:p-8">
+              )}
+
+              {/* ── Interaction tools panel — ALWAYS visible regardless of slide state ── */}
+              <div className="panel flex min-h-[600px] flex-col rounded-[28px] p-6 md:p-8">
                   <div className="flex-1 min-w-0">
 
 
-                  {/* ── Prompt mode ── */}
+                  {/* â”€â”€ Prompt mode â”€â”€ */}
                   {mode === "prompt" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Push one message to every phone</h2>
@@ -1419,7 +1344,7 @@ export function HostConsole({
                                     onClick={() => { setDraft(preset.text); startPrompt(preset.text); }}
                                     type="button"
                                   >
-                                    {preset.text.length > 30 ? `${preset.text.substring(0, 30)}…` : preset.text}
+                                    {preset.text.length > 30 ? `${preset.text.substring(0, 30)}...` : preset.text}
                                   </button>
                                   {/* Voice trigger badge */}
                                   {preset.voiceTrigger && (
@@ -1456,10 +1381,10 @@ export function HostConsole({
                                     </svg>
                                   </button>
                                 </div>
-                                {/* Voice trigger editor — expands on mic icon click */}
+                                {/* Voice trigger editor â€” expands on mic icon click */}
                                 {editingPresetId === preset.id && (
                                   <div className="border-t border-black/5 px-4 py-3">
-                                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest soft-text">When I say…</p>
+                                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest soft-text">When I say...</p>
                                     <div className="flex gap-2">
                                       <input
                                         autoFocus
@@ -1512,7 +1437,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* ── Poll mode ── */}
+                  {/* â”€â”€ Poll mode â”€â”€ */}
                   {mode === "poll" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Create a live poll</h2>
@@ -1569,7 +1494,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* ── Quiz mode ── */}
+                  {/* â”€â”€ Quiz mode â”€â”€ */}
                   {mode === "quiz" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Create a live quiz</h2>
@@ -1594,7 +1519,7 @@ export function HostConsole({
                               onClick={() => setCorrectOptionIndex(i)}
                               type="button"
                             >
-                              ✓
+                              âœ“
                             </button>
                             <input
                               className="flex-1 rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
@@ -1642,7 +1567,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* ── Reactions mode ── */}
+                  {/* â”€â”€ Reactions mode â”€â”€ */}
                   {mode === "reactions" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Start emoji reactions</h2>
@@ -1675,7 +1600,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* ── Open text mode ── */}
+                  {/* â”€â”€ Open text mode â”€â”€ */}
                   {mode === "open_text" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Start open text responses</h2>
@@ -1699,7 +1624,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* ── Countdown mode ── */}
+                  {/* â”€â”€ Countdown mode â”€â”€ */}
                   {mode === "countdown" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Start countdown timer</h2>
@@ -1744,7 +1669,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* ── Slides mode ── */}
+                  {/* â”€â”€ Slides mode â”€â”€ */}
                   {mode === "slides" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Start synced slides</h2>
@@ -1843,8 +1768,7 @@ export function HostConsole({
 
                   {error && <p className="mt-4 text-sm text-[var(--danger)]">{error}</p>}
                 </div>
-              )}
-            </div>
+              </div>
             <div className="flex flex-col gap-6 flex-1 min-w-0">
               {/* Current output preview */}
               <div className="panel flex flex-col min-h-[400px] rounded-[28px] p-6 md:p-8">
@@ -1894,20 +1818,14 @@ export function HostConsole({
                       </p>
                     </>
                   )}
-                  {activeSlides && (
-                    <>
-                      <p className="text-sm font-medium soft-text">Slides active</p>
-                      <p className="mt-2 text-xl font-semibold tracking-tight truncate">
-                        {activeSlides.payload.title ?? "Presentation"}
-                      </p>
-                      <p className="mt-3 text-sm soft-text">
-                        Slide {activeSlides.payload.currentSlideIndex + 1} of {activeSlides.payload.totalSlides}
-                      </p>
-                    </>
-                  )}
-                  {!snapshot.currentInteraction && (
+                  {!snapshot.currentInteraction && !activeSlides && (
                     <p className="text-base leading-7 soft-text">
                       The audience is waiting in the blank lobby. Launch an interaction and this panel mirrors what they see.
+                    </p>
+                  )}
+                  {!snapshot.currentInteraction && activeSlides && (
+                    <p className="text-base leading-7 soft-text">
+                      Slides are live. Use the slide controls below or switch to any interaction tool above.
                     </p>
                   )}
                 </div>
@@ -1916,7 +1834,7 @@ export function HostConsole({
               <div className="panel rounded-[28px] p-6 md:p-8">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm uppercase tracking-[0.22em] soft-text">Session history</p>
-                  {historyLoading && <span className="text-xs soft-text">Refreshing…</span>}
+                  {historyLoading && <span className="text-xs soft-text">Refreshing...</span>}
                 </div>
 
                 {historyError ? (

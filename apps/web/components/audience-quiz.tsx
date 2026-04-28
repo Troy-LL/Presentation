@@ -7,11 +7,15 @@ import type { QuizInteraction } from "@interactive-presentation/types";
 type Props = {
   quiz: QuizInteraction;
   onSubmitAnswer: (optionId: string) => void;
+  compact?: boolean;
 };
 
-export function AudienceQuiz({ quiz, onSubmitAnswer }: Props) {
+export function AudienceQuiz({ quiz, onSubmitAnswer, compact = false }: Props) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const totalVotes = Object.values(quiz.votes).reduce((a, b) => a + b, 0);
+  const shellClass = compact
+    ? "flex h-full min-h-0 items-start justify-center bg-white px-4 py-4 sm:px-5 sm:py-5"
+    : "flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6";
 
   const handleAnswer = (optionId: string) => {
     if (selectedAnswer) return;
@@ -20,14 +24,14 @@ export function AudienceQuiz({ quiz, onSubmitAnswer }: Props) {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-6 sm:px-6">
+    <main className={shellClass}>
       <div className="w-full max-w-xl">
-        <p className="text-center text-sm uppercase tracking-[0.28em] text-slate-300">Live quiz</p>
-        <h1 className="mt-5 text-center text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl md:text-4xl">
+        <p className="text-center text-[11px] uppercase tracking-[0.28em] text-slate-300 sm:text-sm">Live quiz</p>
+        <h1 className={compact ? "mt-3 text-center text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl" : "mt-5 text-center text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl md:text-4xl"}>
           {quiz.payload.question}
         </h1>
 
-        <div className="mt-8 flex flex-col gap-3">
+        <div className={compact ? "mt-5 flex max-h-full flex-col gap-2 overflow-hidden" : "mt-8 flex flex-col gap-3"}>
           {quiz.payload.options.map((option) => {
             const isSelected = selectedAnswer === option.id;
             const isCorrect = option.id === quiz.payload.correctOptionId;
@@ -36,7 +40,8 @@ export function AudienceQuiz({ quiz, onSubmitAnswer }: Props) {
             return (
               <button
                 className={[
-                  "min-h-12 w-full rounded-2xl border px-5 py-4 text-left transition",
+                  "w-full rounded-2xl border text-left transition",
+                  compact ? "min-h-10 px-4 py-3" : "min-h-12 px-5 py-4",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400",
                   reveal
                     ? isCorrect
@@ -56,9 +61,9 @@ export function AudienceQuiz({ quiz, onSubmitAnswer }: Props) {
                 type="button"
               >
                 <span className="flex items-center justify-between gap-4">
-                  <span className="text-[15px] font-medium text-slate-800 sm:text-base">{option.text}</span>
+                  <span className={compact ? "text-[14px] font-medium text-slate-800 sm:text-[15px]" : "text-[15px] font-medium text-slate-800 sm:text-base"}>{option.text}</span>
                   {quiz.answerRevealed && isCorrect && (
-                    <span className="text-sm font-semibold text-green-700">Correct</span>
+                    <span className={compact ? "text-[11px] font-semibold text-green-700 sm:text-xs" : "text-sm font-semibold text-green-700"}>Correct</span>
                   )}
                 </span>
               </button>
@@ -67,12 +72,12 @@ export function AudienceQuiz({ quiz, onSubmitAnswer }: Props) {
         </div>
 
         {selectedAnswer && !quiz.answerRevealed && (
-          <p className="mt-6 text-center text-sm text-slate-400">
+          <p className={compact ? "mt-4 text-center text-xs text-slate-400" : "mt-6 text-center text-sm text-slate-400"}>
             Answer submitted - waiting for reveal...
           </p>
         )}
         {quiz.answerRevealed && (
-          <p className="mt-6 text-center text-sm text-slate-500">
+          <p className={compact ? "mt-4 text-center text-xs text-slate-500" : "mt-6 text-center text-sm text-slate-500"}>
             {totalVotes} {totalVotes === 1 ? "answer" : "answers"} total
           </p>
         )}

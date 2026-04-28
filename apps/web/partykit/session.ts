@@ -1196,7 +1196,12 @@ export default class SessionServer implements Party.Server {
         }
 
         this.state.status = "closed";
-        this.state.sessionMetrics.endedAt = new Date().toISOString();
+        const endedAt = new Date().toISOString();
+        this.state.sessionMetrics.endedAt = endedAt;
+        this.broadcast({
+          type: "server.session_closed",
+          endedAt
+        });
         this.broadcast({
           type: "server.session_snapshot",
           snapshot: snapshotFromState(this.state)

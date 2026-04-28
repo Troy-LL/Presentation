@@ -89,6 +89,19 @@ export function useSessionConnection({
           setSnapshot(message.snapshot);
           prevInteractionRef.current = message.snapshot.currentInteraction;
           break;
+        case "server.session_closed":
+          setSnapshot((current) =>
+            current
+              ? {
+                  ...current,
+                  status: "closed",
+                  currentInteraction: null
+                }
+              : current
+          );
+          prevInteractionRef.current = null;
+          setLatestReactionEmoji(null);
+          break;
         case "server.participant_count":
           setSnapshot((current) =>
             current

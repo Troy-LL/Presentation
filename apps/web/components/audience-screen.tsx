@@ -234,17 +234,23 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
       <>
         {nudgeBanner}
         {flashOverlay}
-        <main className="flex min-h-[100dvh] flex-col bg-white">
-          {/* Slides take ~55% */}
-          <div className="flex-[55] overflow-hidden">
+        <main
+          className="grid min-h-[100dvh] grid-rows-[minmax(0,var(--audience-slides-height,52dvh))_1px_minmax(0,var(--audience-interaction-height,48dvh))] bg-white lg:grid-cols-[minmax(0,1.2fr)_1px_minmax(320px,0.8fr)] lg:grid-rows-1"
+          style={{
+            ["--audience-slides-height" as string]: "52dvh",
+            ["--audience-interaction-height" as string]: "48dvh"
+          }}
+        >
+          {/* Slides area */}
+          <div className="min-h-0 overflow-hidden lg:border-r lg:border-slate-100">
             <AudienceSlideStage compact interaction={currentSlideDeck!} />
           </div>
 
-          {/* Thin divider */}
-          <div className="h-px shrink-0 bg-slate-100" />
+          {/* Divider */}
+          <div className="h-px shrink-0 bg-slate-100 lg:h-full lg:w-px" />
 
-          {/* Interaction takes ~40% — scrollable if content overflows */}
-          <div className="flex-[40] overflow-y-auto">
+          {/* Interaction area */}
+          <div className="min-h-0 overflow-hidden lg:overflow-auto">
             {interactionNode}
           </div>
         </main>
@@ -279,10 +285,10 @@ export function AudienceScreen({ sessionCode }: { sessionCode: string }) {
       <>
         {nudgeBanner}
         {flashOverlay}
-        <main className="flex min-h-screen items-center justify-center bg-white px-8 text-center">
+        <main className="flex min-h-screen items-center justify-center bg-white px-4 text-center sm:px-8">
           <div className="max-w-5xl">
-            <p className="text-sm uppercase tracking-[0.28em] text-slate-300">Live prompt</p>
-            <h1 className="mt-8 text-5xl font-semibold tracking-tight text-slate-950 md:text-7xl">
+            <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300 sm:text-sm">Live prompt</p>
+            <h1 className="mt-5 text-4xl font-semibold tracking-tight text-slate-950 sm:mt-8 sm:text-5xl md:text-7xl">
               {currentInteraction.payload.text}
             </h1>
             {error ? <p className="mt-6 text-sm text-red-600">{error}</p> : null}
@@ -370,21 +376,21 @@ function renderInteractionNode(
 ) {
   switch (interaction.type) {
     case "poll":
-      return <AudiencePoll onVote={actions.submitVote} poll={interaction} />;
+      return <AudiencePoll compact onVote={actions.submitVote} poll={interaction} />;
     case "quiz":
-      return <AudienceQuiz onSubmitAnswer={actions.submitQuizAnswer} quiz={interaction} />;
+      return <AudienceQuiz compact onSubmitAnswer={actions.submitQuizAnswer} quiz={interaction} />;
     case "reactions":
-      return <AudienceReactions onSendReaction={actions.sendReaction} reactions={interaction} />;
+      return <AudienceReactions compact onSendReaction={actions.sendReaction} reactions={interaction} />;
     case "open_text":
-      return <AudienceOpenText interaction={interaction} onSubmit={actions.submitTextResponse} />;
+      return <AudienceOpenText compact interaction={interaction} onSubmit={actions.submitTextResponse} />;
     case "countdown":
-      return <AudienceCountdown interaction={interaction} />;
+      return <AudienceCountdown compact interaction={interaction} />;
     case "prompt":
       return (
-        <div className="flex h-full items-center justify-center px-6 py-4 text-center">
+        <div className="flex h-full min-h-0 items-center justify-center px-4 py-4 text-center sm:px-6">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Live prompt</p>
-            <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400 sm:text-xs">Live prompt</p>
+            <p className="mt-3 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl md:text-2xl">
               {interaction.payload.text}
             </p>
           </div>

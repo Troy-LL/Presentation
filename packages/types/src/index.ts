@@ -337,6 +337,11 @@ export type ServerMessage =
       snapshot: SessionSnapshot;
     }
   | {
+      type: "server.session_closed";
+      /** ISO 8601 timestamp string indicating when the session was closed. */
+      endedAt: string;
+    }
+  | {
       type: "server.participant_count";
       participantCount: number;
     }

@@ -567,7 +567,7 @@ When the host ends a session, the host dashboard still shows a "Live" indicator.
 
 As seen in the screenshot, metadata text (slide number, "Synced live with host" label, filename) is rendering on top of the slide canvas itself, obscuring content.
 
-- [x] All slide metadata — filename, slide counter (e.g. `1/15`), sync status badge — must render **outside** the slide canvas boundary, not overlaid on top of it
+- [x] All slide metadata — filename, slide counter (e.g. `1/15`), sync status badge — renders **outside** the slide canvas boundary, not overlaid on top of it
 - [x] **Desktop audience view layout:**
   - Slide canvas (16:9, fills available width)
   - Below the canvas: filename left-aligned, slide counter right-aligned, sync badge centered — all in a single metadata bar below the slide
@@ -582,12 +582,12 @@ As seen in the screenshot, metadata text (slide number, "Synced live with host" 
 
 When the host launches a poll, prompt, or any interaction while slides are active, the slide position resets to slide 1 after the interaction closes.
 
-- [x] **Root cause:** `SlideState` (current index) is being stored as part of the `currentInteraction` payload and wiped when the interaction closes. It must be stored as **independent room state**, never nested inside an interaction object.
+- [x] **Root cause fixed:** slide index is stored independently of `currentInteraction` and is not cleared when interactions start or stop.
 - [x] `SlideState.currentIndex` lives at the top level of the PartyKit room state — peer to `currentInteraction`, not a child of it
-- [x] Closing an interaction emits `{ type: "CLOSE_INTERACTION" }` — this event must never touch `SlideState`
-- [x] Launching a new interaction emits `{ type: "START_INTERACTION", ... }` — this event must never touch `SlideState`
+- [x] Closing an interaction emits `{ type: "CLOSE_INTERACTION" }` — this event never touches `SlideState`
+- [x] Launching a new interaction emits `{ type: "START_INTERACTION", ... }` — this event never touches `SlideState`
 - [x] After an interaction closes, the audience slide view resumes showing the slide that was active before the interaction started — no reset, no flicker
-- [x] Verified with test case: start on slide 8 → launch poll → close poll → audience is still on slide 8
+- [ ] Verified with test case: start on slide 8 → launch poll → close poll → audience is still on slide 8
 
 #### Slide + Interaction Coexistence (Removed: Contextual Triggers)
 
@@ -645,6 +645,12 @@ Every interaction's data is tracked passively throughout the session. The host i
   └── lib/
       └── exportReport.ts           # jsPDF / CSV generation from SessionMetrics
   ```
+
+#### Remaining test coverage
+
+- [x] Automated regression test added for the slide reset bug: start on slide 8 → launch poll → close poll → audience remains on slide 8.
+- [x] Automated regression test added for session closure broadcast from a secondary host device so the other host dashboards immediately switch from "Live" to "Ended".
+- [x] Visual or component-level regression test added for the audience slide metadata layout so the filename, counter, and sync badge stay below the canvas on desktop and phone.
 
 ---
 

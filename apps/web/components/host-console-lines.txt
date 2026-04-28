@@ -1,0 +1,801 @@
+1101:         onToggleFullscreen={() => void toggleFullscreen()}
+1102:         onToggleVoice={() => setVoiceEnabled(!voiceEnabled)}
+1103:         onEndSession={openSessionEndModal}
+1104:         content={
+1105:           <div className="flex flex-col gap-6 w-full xl:flex-row min-w-0">
+1106:             <div className="flex flex-col gap-6 flex-1 min-w-0">
+1107: 
+1108:               {/* ── Active interaction live results — always shown when an interaction runs ── */}
+1109:               {activePoll && (
+1110:                 <HostPollResults
+1111:                   onClear={clearInteraction}
+1112:                   onReveal={revealPollResults}
+1113:                   poll={activePoll}
+1114:                 />
+1115:               )}
+1116:               {activeQuiz && (
+1117:                 <HostQuizResults
+1118:                   onClear={clearInteraction}
+1119:                   onReveal={revealQuizAnswer}
+1120:                   quiz={activeQuiz}
+1121:                 />
+1122:               )}
+1123:               {activeReactions && (
+1124:                 <HostReactionResults
+1125:                   latestReactionEmoji={latestReactionEmoji}
+1126:                   onClear={clearInteraction}
+1127:                   reactions={activeReactions}
+1128:                 />
+1129:               )}
+1130:               {activeOpenText && (
+1131:                 <HostOpenTextResults interaction={activeOpenText} onClear={clearInteraction} />
+1132:               )}
+1133:               {activeCountdown && (
+1134:                 <HostCountdownResults interaction={activeCountdown} onClear={clearInteraction} />
+1135:               )}
+1136: 
+1137:               {/* ── Interaction tools panel — ALWAYS visible regardless of slide state ── */}
+1138:               <div className="panel flex min-h-[600px] flex-col rounded-[28px] p-6 md:p-8">
+1139:                   <div className="flex-1 min-w-0">
+1140: 
+1141: 
+1142:                   {/* â”€â”€ Prompt mode â”€â”€ */}
+1143:                   {mode === "prompt" && (
+1144:                     <div className="mt-6">
+1145:                       <h2 className="text-xl font-semibold tracking-tight">Push one message to every phone</h2>
+1146:                       <textarea
+1147:                         className="mt-4 min-h-36 w-full rounded-[20px] border border-black/10 bg-white px-5 py-4 text-2xl leading-tight outline-none focus:border-black"
+1148:                         maxLength={140}
+1149:                         onChange={(e) => setDraft(e.target.value)}
+1150:                         placeholder="Type the line the whole room should see."
+1151:                         value={draft}
+1152:                       />
+1153:                       <div className="mt-4 flex flex-wrap gap-3">
+1154:                         <button
+1155:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1156:                           disabled={!draft.trim() || !hostToken || isClosed}
+1157:                           onClick={() => startPrompt(draft)}
+1158:                           type="button"
+1159:                         >
+1160:                           Launch prompt
+1161:                         </button>
+1162:                         {isActive && activePrompt && (
+1163:                           <button
+1164:                             className="ghost-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold"
+1165:                             onClick={clearInteraction}
+1166:                             type="button"
+1167:                           >
+1168:                             Clear prompt
+1169:                           </button>
+1170:                         )}
+1171:                         <button
+1172:                           className="ghost-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold"
+1173:                           disabled={!draft.trim()}
+1174:                           onClick={savePreset}
+1175:                           title="Save this text for future use"
+1176:                           type="button"
+1177:                         >
+1178:                           Save as preset
+1179:                         </button>
+1180:                       </div>
+1181: 
+1182:                       {/* Presets */}
+1183:                       {presets.length > 0 && (
+1184:                         <div className="mt-6 border-t border-black/5 pt-6">
+1185:                           <p className="text-xs uppercase tracking-[0.2em] soft-text">Your presets</p>
+1186:                           <div className="mt-3 flex flex-wrap gap-2">
+1187:                             {presets.map((preset) => (
+1188:                               <div
+1189:                                 className={[
+1190:                                   "group flex flex-col overflow-hidden rounded-[20px] border bg-white shadow-sm transition-all duration-300",
+1191:                                   highlightedPresetId === preset.id
+1192:                                     ? "border-[var(--accent)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_22%,transparent)]"
+1193:                                     : "border-black/10"
+1194:                                 ].join(" ")}
+1195:                                 key={preset.id}
+1196:                               >
+1197:                                 <div className="flex items-center">
+1198:                                   <button
+1199:                                     className="flex-1 px-4 py-2.5 text-left text-sm font-medium text-slate-800 transition hover:bg-slate-50"
+1200:                                     disabled={isClosed}
+1201:                                     onClick={() => { setDraft(preset.text); startPrompt(preset.text); }}
+1202:                                     type="button"
+1203:                                   >
+1204:                                     {preset.text.length > 30 ? `${preset.text.substring(0, 30)}â€¦` : preset.text}
+1205:                                   </button>
+1206:                                   {/* Voice trigger badge */}
+1207:                                   {preset.voiceTrigger && (
+1208:                                     <span className="mr-2 flex items-center gap-1 rounded-full bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]">
+1209:                                       <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /></svg>
+1210:                                       {preset.voiceTrigger}
+1211:                                     </span>
+1212:                                   )}
+1213:                                   {/* Edit trigger toggle */}
+1214:                                   <button
+1215:                                     className="flex h-full items-center border-l border-black/10 px-3 text-slate-400 opacity-0 transition hover:bg-slate-50 hover:text-slate-700 group-hover:opacity-100"
+1216:                                     onClick={() => {
+1217:                                       if (editingPresetId === preset.id) {
+1218:                                         setEditingPresetId(null);
+1219:                                       } else {
+1220:                                         setEditingPresetId(preset.id);
+1221:                                         setEditingVoiceTrigger(preset.voiceTrigger ?? "");
+1222:                                         setEditingTriggerConfidence(preset.triggerConfidence ?? voiceConfidence);
+1223:                                       }
+1224:                                     }}
+1225:                                     title="Set voice trigger"
+1226:                                     type="button"
+1227:                                   >
+1228:                                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /></svg>
+1229:                                   </button>
+1230:                                   <button
+1231:                                     className="flex h-full items-center border-l border-black/10 bg-slate-50 px-3 text-slate-400 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+1232:                                     onClick={() => deletePreset(preset.id)}
+1233:                                     title="Delete preset"
+1234:                                     type="button"
+1235:                                   >
+1236:                                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+1237:                                       <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+1238:                                     </svg>
+1239:                                   </button>
+1240:                                 </div>
+1241:                                 {/* Voice trigger editor â€” expands on mic icon click */}
+1242:                                 {editingPresetId === preset.id && (
+1243:                                   <div className="border-t border-black/5 px-4 py-3">
+1244:                                     <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest soft-text">When I sayâ€¦</p>
+1245:                                     <div className="flex gap-2">
+1246:                                       <input
+1247:                                         autoFocus
+1248:                                         className="flex-1 rounded-full border border-black/10 bg-white/80 px-3 py-1.5 text-sm outline-none focus:border-[var(--accent)]"
+1249:                                         onChange={(e) => setEditingVoiceTrigger(e.target.value)}
+1250:                                         placeholder="e.g. let's vote"
+1251:                                         type="text"
+1252:                                         value={editingVoiceTrigger}
+1253:                                       />
+1254:                                       <input
+1255:                                         aria-label="Trigger confidence"
+1256:                                         className="w-24 rounded-full border border-black/10 bg-white/80 px-3 py-1.5 text-xs outline-none focus:border-[var(--accent)]"
+1257:                                         max={1}
+1258:                                         min={0.5}
+1259:                                         onChange={(e) => setEditingTriggerConfidence(Number(e.target.value))}
+1260:                                         step={0.05}
+1261:                                         type="number"
+1262:                                         value={editingTriggerConfidence}
+1263:                                       />
+1264:                                       <button
+1265:                                         className="accent-button rounded-full px-4 py-1.5 text-xs font-semibold"
+1266:                                         onClick={() => {
+1267:                                           updatePresetVoiceTrigger(preset.id, editingVoiceTrigger, editingTriggerConfidence);
+1268:                                           setEditingPresetId(null);
+1269:                                         }}
+1270:                                         type="button"
+1271:                                       >
+1272:                                         Save
+1273:                                       </button>
+1274:                                       {preset.voiceTrigger && (
+1275:                                         <button
+1276:                                           className="ghost-button rounded-full px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-500"
+1277:                                           onClick={() => {
+1278:                                             updatePresetVoiceTrigger(preset.id, "");
+1279:                                             setEditingPresetId(null);
+1280:                                           }}
+1281:                                           type="button"
+1282:                                         >
+1283:                                           Remove
+1284:                                         </button>
+1285:                                       )}
+1286:                                     </div>
+1287:                                   </div>
+1288:                                 )}
+1289:                               </div>
+1290:                             ))}
+1291:                           </div>
+1292:                         </div>
+1293:                       )}
+1294:                     </div>
+1295:                   )}
+1296: 
+1297:                   {/* â”€â”€ Poll mode â”€â”€ */}
+1298:                   {mode === "poll" && (
+1299:                     <div className="mt-6">
+1300:                       <h2 className="text-xl font-semibold tracking-tight">Create a live poll</h2>
+1301:                       <input
+1302:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1303:                         maxLength={200}
+1304:                         onChange={(e) => setPollQuestion(e.target.value)}
+1305:                         placeholder="What's your question?"
+1306:                         value={pollQuestion}
+1307:                       />
+1308:                       <div className="mt-4 flex flex-col gap-2">
+1309:                         {pollOptions.map((opt, i) => (
+1310:                           <div className="flex gap-2" key={i}>
+1311:                             <input
+1312:                               className="flex-1 rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1313:                               maxLength={100}
+1314:                               onChange={(e) => setOption(i, e.target.value)}
+1315:                               placeholder={`Option ${i + 1}`}
+1316:                               value={opt}
+1317:                             />
+1318:                             {pollOptions.length > 2 && (
+1319:                               <button
+1320:                                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-black/10 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+1321:                                 onClick={() => removeOption(i)}
+1322:                                 type="button"
+1323:                               >
+1324:                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+1325:                                   <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+1326:                                 </svg>
+1327:                               </button>
+1328:                             )}
+1329:                           </div>
+1330:                         ))}
+1331:                       </div>
+1332:                       {pollOptions.length < 10 && (
+1333:                         <button
+1334:                           className="mt-2 text-sm font-medium text-slate-500 underline underline-offset-2 transition hover:text-slate-800"
+1335:                           onClick={addOption}
+1336:                           type="button"
+1337:                         >
+1338:                           + Add option
+1339:                         </button>
+1340:                       )}
+1341:                       <div className="mt-5 flex flex-wrap gap-3">
+1342:                         <button
+1343:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1344:                           disabled={!pollQuestion.trim() || !validPollOptions || isClosed}
+1345:                           onClick={() => startPoll(pollQuestion, pollOptions)}
+1346:                           type="button"
+1347:                         >
+1348:                           Launch poll
+1349:                         </button>
+1350:                       </div>
+1351:                     </div>
+1352:                   )}
+1353: 
+1354:                   {/* â”€â”€ Quiz mode â”€â”€ */}
+1355:                   {mode === "quiz" && (
+1356:                     <div className="mt-6">
+1357:                       <h2 className="text-xl font-semibold tracking-tight">Create a live quiz</h2>
+1358:                       <input
+1359:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1360:                         maxLength={200}
+1361:                         onChange={(e) => setQuizQuestion(e.target.value)}
+1362:                         placeholder="What's your quiz question?"
+1363:                         value={quizQuestion}
+1364:                       />
+1365:                       <div className="mt-4 flex flex-col gap-2">
+1366:                         {quizOptions.map((opt, i) => (
+1367:                           <div className="flex items-center gap-2" key={i}>
+1368:                             <button
+1369:                               aria-label={`Mark option ${i + 1} as correct`}
+1370:                               className={[
+1371:                                 "h-8 w-8 shrink-0 rounded-full border text-sm font-semibold transition",
+1372:                                 correctOptionIndex === i
+1373:                                   ? "border-green-400 bg-green-50 text-green-700"
+1374:                                   : "border-black/15 bg-white text-slate-500 hover:border-black/30"
+1375:                               ].join(" ")}
+1376:                               onClick={() => setCorrectOptionIndex(i)}
+1377:                               type="button"
+1378:                             >
+1379:                               âœ“
+1380:                             </button>
+1381:                             <input
+1382:                               className="flex-1 rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1383:                               maxLength={100}
+1384:                               onChange={(e) => setQuizOption(i, e.target.value)}
+1385:                               placeholder={`Option ${i + 1}`}
+1386:                               value={opt}
+1387:                             />
+1388:                             {quizOptions.length > 2 && (
+1389:                               <button
+1390:                                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-black/10 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+1391:                                 onClick={() => removeQuizOption(i)}
+1392:                                 type="button"
+1393:                               >
+1394:                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+1395:                                   <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+1396:                                 </svg>
+1397:                               </button>
+1398:                             )}
+1399:                           </div>
+1400:                         ))}
+1401:                       </div>
+1402:                       {quizOptions.length < 10 && (
+1403:                         <button
+1404:                           className="mt-2 text-sm font-medium text-slate-500 underline underline-offset-2 transition hover:text-slate-800"
+1405:                           onClick={addQuizOption}
+1406:                           type="button"
+1407:                         >
+1408:                           + Add option
+1409:                         </button>
+1410:                       )}
+1411:                       <p className="mt-3 text-sm soft-text">
+1412:                         Tap the check icon beside an option to mark it as the correct answer.
+1413:                       </p>
+1414:                       <div className="mt-5 flex flex-wrap gap-3">
+1415:                         <button
+1416:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1417:                           disabled={!quizQuestion.trim() || !validQuizOptions || !hasValidCorrectOption || isClosed}
+1418:                           onClick={() => startQuiz(quizQuestion, quizOptions, correctOptionIndex)}
+1419:                           type="button"
+1420:                         >
+1421:                           Launch quiz
+1422:                         </button>
+1423:                       </div>
+1424:                     </div>
+1425:                   )}
+1426: 
+1427:                   {/* â”€â”€ Reactions mode â”€â”€ */}
+1428:                   {mode === "reactions" && (
+1429:                     <div className="mt-6">
+1430:                       <h2 className="text-xl font-semibold tracking-tight">Start emoji reactions</h2>
+1431:                       <input
+1432:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1433:                         maxLength={140}
+1434:                         onChange={(e) => setReactionPrompt(e.target.value)}
+1435:                         placeholder="Prompt shown on audience phones"
+1436:                         value={reactionPrompt}
+1437:                       />
+1438:                       <input
+1439:                         className="mt-3 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1440:                         onChange={(e) => setReactionEmojis(e.target.value)}
+1441:                         placeholder="ðŸ‘ ðŸ”¥ â¤ï¸ ðŸ˜‚"
+1442:                         value={reactionEmojis}
+1443:                       />
+1444:                       <p className="mt-2 text-sm soft-text">
+1445:                         Add 2-8 emojis separated by spaces.
+1446:                       </p>
+1447:                       <div className="mt-5 flex flex-wrap gap-3">
+1448:                         <button
+1449:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1450:                           disabled={!validReactionsConfig || isClosed}
+1451:                           onClick={() => startReactions(reactionPrompt, parsedReactionEmojis)}
+1452:                           type="button"
+1453:                         >
+1454:                           Launch reactions
+1455:                         </button>
+1456:                       </div>
+1457:                     </div>
+1458:                   )}
+1459: 
+1460:                   {/* â”€â”€ Open text mode â”€â”€ */}
+1461:                   {mode === "open_text" && (
+1462:                     <div className="mt-6">
+1463:                       <h2 className="text-xl font-semibold tracking-tight">Start open text responses</h2>
+1464:                       <input
+1465:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1466:                         maxLength={180}
+1467:                         onChange={(e) => setOpenTextPrompt(e.target.value)}
+1468:                         placeholder="Prompt shown to audience"
+1469:                         value={openTextPrompt}
+1470:                       />
+1471:                       <div className="mt-5 flex flex-wrap gap-3">
+1472:                         <button
+1473:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1474:                           disabled={!openTextPrompt.trim() || isClosed}
+1475:                           onClick={() => startOpenText(openTextPrompt)}
+1476:                           type="button"
+1477:                         >
+1478:                           Launch open text
+1479:                         </button>
+1480:                       </div>
+1481:                     </div>
+1482:                   )}
+1483: 
+1484:                   {/* â”€â”€ Countdown mode â”€â”€ */}
+1485:                   {mode === "countdown" && (
+1486:                     <div className="mt-6">
+1487:                       <h2 className="text-xl font-semibold tracking-tight">Start countdown timer</h2>
+1488:                       <input
+1489:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1490:                         maxLength={80}
+1491:                         onChange={(e) => setCountdownLabel(e.target.value)}
+1492:                         placeholder="Timer label shown on audience"
+1493:                         value={countdownLabel}
+1494:                       />
+1495:                       <div className="mt-3 flex flex-wrap gap-2">
+1496:                         {[10, 30, 60, 120].map((seconds) => (
+1497:                           <button
+1498:                             className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
+1499:                             key={seconds}
+1500:                             onClick={() => setCountdownSeconds(seconds)}
+1501:                             type="button"
+1502:                           >
+1503:                             {seconds}s
+1504:                           </button>
+1505:                         ))}
+1506:                       </div>
+1507:                       <input
+1508:                         className="mt-3 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1509:                         min={3}
+1510:                         onChange={(e) => setCountdownSeconds(Number(e.target.value))}
+1511:                         step={1}
+1512:                         type="number"
+1513:                         value={countdownSeconds}
+1514:                       />
+1515:                       <p className="mt-2 text-sm soft-text">Allowed range: 3-3600 seconds.</p>
+1516:                       <div className="mt-5 flex flex-wrap gap-3">
+1517:                         <button
+1518:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1519:                           disabled={!countdownLabel.trim() || !validCountdown || isClosed}
+1520:                           onClick={() => startCountdown(countdownLabel, countdownSeconds)}
+1521:                           type="button"
+1522:                         >
+1523:                           Start countdown
+1524:                         </button>
+1525:                       </div>
+1526:                     </div>
+1527:                   )}
+1528: 
+1529:                   {/* â”€â”€ Slides mode â”€â”€ */}
+1530:                   {mode === "slides" && (
+1531:                     <div className="mt-6">
+1532:                       <h2 className="text-xl font-semibold tracking-tight">Start synced slides</h2>
+1533:                       <input
+1534:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1535:                         maxLength={120}
+1536:                         onChange={(e) => setSlideTitle(e.target.value)}
+1537:                         placeholder="Deck title (optional)"
+1538:                         value={slideTitle}
+1539:                       />
+1540: 
+1541:                       <div
+1542:                         className={[
+1543:                           "group mt-4 flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-[24px] border-2 border-dashed transition-all",
+1544:                           isDragging
+1545:                             ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
+1546:                             : "border-black/10 bg-black/3 hover:border-black/20 hover:bg-black/[0.04]"
+1547:                         ].join(" ")}
+1548:                         onDragLeave={handleDragLeave}
+1549:                         onDragOver={handleDragOver}
+1550:                         onDrop={handleDrop}
+1551:                       >
+1552:                         <input
+1553:                           accept="application/pdf"
+1554:                           className="hidden"
+1555:                           id="slide-upload"
+1556:                           onChange={(e) => void handleSlideFile(e.target.files?.[0] ?? null)}
+1557:                           type="file"
+1558:                         />
+1559:                         <label
+1560:                           className="flex w-full flex-col items-center justify-center gap-3 px-6 py-8 text-center"
+1561:                         {quizOptions.map((opt, i) => (
+1562:                           <div className="flex items-center gap-2" key={i}>
+1563:                             <button
+1564:                               aria-label={`Mark option ${i + 1} as correct`}
+1565:                               className={[
+1566:                                 "h-8 w-8 shrink-0 rounded-full border text-sm font-semibold transition",
+1567:                                 correctOptionIndex === i
+1568:                                   ? "border-green-400 bg-green-50 text-green-700"
+1569:                                   : "border-black/15 bg-white text-slate-500 hover:border-black/30"
+1570:                               ].join(" ")}
+1571:                               onClick={() => setCorrectOptionIndex(i)}
+1572:                               type="button"
+1573:                             >
+1574:                               ✓
+1575:                             </button>
+1576:                             <input
+1577:                               className="flex-1 rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1578:                               maxLength={100}
+1579:                               onChange={(e) => setQuizOption(i, e.target.value)}
+1580:                               placeholder={`Option ${i + 1}`}
+1581:                               value={opt}
+1582:                             />
+1583:                             {quizOptions.length > 2 && (
+1584:                               <button
+1585:                                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-black/10 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+1586:                                 onClick={() => removeQuizOption(i)}
+1587:                                 type="button"
+1588:                               >
+1589:                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+1590:                                   <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+1591:                                 </svg>
+1592:                               </button>
+1593:                             )}
+1594:                           </div>
+1595:                         ))}
+1596:                       </div>
+1597:                       {quizOptions.length < 10 && (
+1598:                         <button
+1599:                           className="mt-2 text-sm font-medium text-slate-500 underline underline-offset-2 transition hover:text-slate-800"
+1600:                           onClick={addQuizOption}
+1601:                           type="button"
+1602:                         >
+1603:                           + Add option
+1604:                         </button>
+1605:                       )}
+1606:                       <p className="mt-3 text-sm soft-text">
+1607:                         Tap the check icon beside an option to mark it as the correct answer.
+1608:                       </p>
+1609:                       <div className="mt-5 flex flex-wrap gap-3">
+1610:                         <button
+1611:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1612:                           disabled={!quizQuestion.trim() || !validQuizOptions || !hasValidCorrectOption || isClosed}
+1613:                           onClick={() => startQuiz(quizQuestion, quizOptions, correctOptionIndex)}
+1614:                           type="button"
+1615:                         >
+1616:                           Launch quiz
+1617:                         </button>
+1618:                       </div>
+1619:                     </div>
+1620:                   )}
+1621: 
+1622:                   {/* ── Reactions mode ── */}
+1623:                   {mode === "reactions" && (
+1624:                     <div className="mt-6">
+1625:                       <h2 className="text-xl font-semibold tracking-tight">Start emoji reactions</h2>
+1626:                       <input
+1627:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1628:                         maxLength={140}
+1629:                         onChange={(e) => setReactionPrompt(e.target.value)}
+1630:                         placeholder="Prompt shown on audience phones"
+1631:                         value={reactionPrompt}
+1632:                       />
+1633:                       <input
+1634:                         className="mt-3 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1635:                         onChange={(e) => setReactionEmojis(e.target.value)}
+1636:                         placeholder="👍 🔥 ❤️ 😂"
+1637:                         value={reactionEmojis}
+1638:                       />
+1639:                       <p className="mt-2 text-sm soft-text">
+1640:                         Add 2-8 emojis separated by spaces.
+1641:                       </p>
+1642:                       <div className="mt-5 flex flex-wrap gap-3">
+1643:                         <button
+1644:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1645:                           disabled={!validReactionsConfig || isClosed}
+1646:                           onClick={() => startReactions(reactionPrompt, parsedReactionEmojis)}
+1647:                           type="button"
+1648:                         >
+1649:                           Launch reactions
+1650:                         </button>
+1651:                       </div>
+1652:                     </div>
+1653:                   )}
+1654: 
+1655:                   {/* ── Open text mode ── */}
+1656:                   {mode === "open_text" && (
+1657:                     <div className="mt-6">
+1658:                       <h2 className="text-xl font-semibold tracking-tight">Start open text responses</h2>
+1659:                       <input
+1660:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1661:                         maxLength={180}
+1662:                         onChange={(e) => setOpenTextPrompt(e.target.value)}
+1663:                         placeholder="Prompt shown to audience"
+1664:                         value={openTextPrompt}
+1665:                       />
+1666:                       <div className="mt-5 flex flex-wrap gap-3">
+1667:                         <button
+1668:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1669:                           disabled={!openTextPrompt.trim() || isClosed}
+1670:                           onClick={() => startOpenText(openTextPrompt)}
+1671:                           type="button"
+1672:                         >
+1673:                           Launch open text
+1674:                         </button>
+1675:                       </div>
+1676:                     </div>
+1677:                   )}
+1678: 
+1679:                   {/* ── Countdown mode ── */}
+1680:                   {mode === "countdown" && (
+1681:                     <div className="mt-6">
+1682:                       <h2 className="text-xl font-semibold tracking-tight">Start countdown timer</h2>
+1683:                       <input
+1684:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1685:                         maxLength={80}
+1686:                         onChange={(e) => setCountdownLabel(e.target.value)}
+1687:                         placeholder="Timer label shown on audience"
+1688:                         value={countdownLabel}
+1689:                       />
+1690:                       <div className="mt-3 flex flex-wrap gap-2">
+1691:                         {[10, 30, 60, 120].map((seconds) => (
+1692:                           <button
+1693:                             className="ghost-button inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
+1694:                             key={seconds}
+1695:                             onClick={() => setCountdownSeconds(seconds)}
+1696:                             type="button"
+1697:                           >
+1698:                             {seconds}s
+1699:                           </button>
+1700:                         ))}
+1701:                       </div>
+1702:                       <input
+1703:                         className="mt-3 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1704:                         min={3}
+1705:                         onChange={(e) => setCountdownSeconds(Number(e.target.value))}
+1706:                         step={1}
+1707:                         type="number"
+1708:                         value={countdownSeconds}
+1709:                       />
+1710:                       <p className="mt-2 text-sm soft-text">Allowed range: 3-3600 seconds.</p>
+1711:                       <div className="mt-5 flex flex-wrap gap-3">
+1712:                         <button
+1713:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1714:                           disabled={!countdownLabel.trim() || !validCountdown || isClosed}
+1715:                           onClick={() => startCountdown(countdownLabel, countdownSeconds)}
+1716:                           type="button"
+1717:                         >
+1718:                           Start countdown
+1719:                         </button>
+1720:                       </div>
+1721:                     </div>
+1722:                   )}
+1723: 
+1724:                   {/* ── Slides mode ── */}
+1725:                   {mode === "slides" && (
+1726:                     <div className="mt-6">
+1727:                       <h2 className="text-xl font-semibold tracking-tight">Start synced slides</h2>
+1728:                       <input
+1729:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1730:                         maxLength={120}
+1731:                         onChange={(e) => setSlideTitle(e.target.value)}
+1732:                         placeholder="Deck title (optional)"
+1733:                         value={slideTitle}
+1734:                       />
+1735: 
+1736:                       <div
+1737:                         className={[
+1738:                           "group mt-4 flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-[24px] border-2 border-dashed transition-all",
+1739:                           isDragging
+1740:                             ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
+1741:                             : "border-black/10 bg-black/3 hover:border-black/20 hover:bg-black/[0.04]"
+1742:                         ].join(" ")}
+1743:                         onDragLeave={handleDragLeave}
+1744:                         onDragOver={handleDragOver}
+1745:                         onDrop={handleDrop}
+1746:                       >
+1747:                         <input
+1748:                           accept="application/pdf"
+1749:                           className="hidden"
+1750:                           id="slide-upload"
+1751:                           onChange={(e) => void handleSlideFile(e.target.files?.[0] ?? null)}
+1752:                           type="file"
+1753:                         />
+1754:                         <label
+1755:                           className="flex w-full flex-col items-center justify-center gap-3 px-6 py-8 text-center"
+1756:                           htmlFor="slide-upload"
+1757:                         >
+1758:                           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5 transition group-hover:scale-110">
+1759:                             <svg className="h-6 w-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+1760:                               <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+1761:                             </svg>
+1762:                           </div>
+1763:                           <div>
+1764:                             <p className="text-sm font-semibold text-slate-800">
+1765:                               {isDragging ? "Drop your PDF here" : "Click or drag PDF to upload"}
+1766:                             </p>
+1767:                             <p className="mt-1 text-xs soft-text">Up to 40 slides supported</p>
+1768:                           </div>
+1769:                         </label>
+1770:                       </div>
+1771: 
+1772:                       <div className="mt-4 flex items-center gap-3">
+1773:                         <div className="h-px flex-1 bg-black/5" />
+1774:                         <span className="text-[10px] font-bold uppercase tracking-widest soft-text">OR</span>
+1775:                         <div className="h-px flex-1 bg-black/5" />
+1776:                       </div>
+1777: 
+1778:                       <input
+1779:                         className="mt-4 w-full rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
+1780:                         onChange={(e) => {
+1781:                           const value = e.target.value;
+1782:                           setSlideSourceUrl(value);
+1783:                           if (value.startsWith("http://") || value.startsWith("https://")) {
+1784:                             void resolveSlideCount(value);
+1785:                           }
+1786:                         }}
+1787:                         placeholder="Paste a direct PDF URL"
+1788:                         value={slideSourceUrl}
+1789:                       />
+1790:                       <div className="mt-3 flex items-center gap-3">
+1791:                         <span className="text-sm soft-text">
+1792:                           {slideLoading
+1793:                             ? "Reading PDF..."
+1794:                             : slideTotalSlides > 0
+1795:                               ? `${slideTotalSlides} slides detected`
+1796:                               : "No deck loaded yet"}
+1797:                         </span>
+1798:                         {slideLoadError && <span className="text-sm text-[var(--danger)]">{slideLoadError}</span>}
+1799:                       </div>
+1800:                       <div className="mt-5 flex flex-wrap gap-3">
+1801:                         <button
+1802:                           className="accent-button inline-flex h-11 items-center justify-center rounded-full px-5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+1803:                           disabled={!validSlideDeck || isClosed || slideLoading}
+1804:                           onClick={() =>
+1805:                             startSlideDeck(
+1806:                               crypto.randomUUID(),
+1807:                               slideTitle.trim() || null,
+1808:                               slideSourceUrl,
+1809:                               slideTotalSlides
+1810:                             )
+1811:                           }
+1812:                           type="button"
+1813:                         >
+1814:                           Start slides
+1815:                         </button>
+1816:                       </div>
+1817:                     </div>
+1818:                   )}
+1819:                 </div>
+1820: 
+1821:                   {error && <p className="mt-4 text-sm text-[var(--danger)]">{error}</p>}
+1822:                 </div>
+1823:               </div>
+1824:                     <p className="text-4xl font-semibold tracking-tight truncate">{activePrompt.payload.text}</p>
+1825:                   )}
+1826:                   {activePoll && (
+1827:                     <>
+1828:                       <p className="text-sm font-medium soft-text">Poll active</p>
+1829:                       <p className="mt-2 text-xl font-semibold tracking-tight truncate">{activePoll.payload.question}</p>
+1830:                       <p className="mt-3 text-sm soft-text">{Object.values(activePoll.votes).reduce((a, b) => a + b, 0)} votes so far</p>
+1831:                     </>
+1832:                   )}
+1833:                   {activeQuiz && (
+1834:                     <>
+1835:                       <p className="text-sm font-medium soft-text">Quiz active</p>
+1836:                       <p className="mt-2 text-xl font-semibold tracking-tight truncate">{activeQuiz.payload.question}</p>
+1837:                       <p className="mt-3 text-sm soft-text">{Object.values(activeQuiz.votes).reduce((a, b) => a + b, 0)} answers so far</p>
+1838:                     </>
+1839:                   )}
+1840:                   {activeReactions && (
+1841:                     <>
+1842:                       <p className="text-sm font-medium soft-text">Reactions active</p>
+1843:                       <p className="mt-2 text-xl font-semibold tracking-tight truncate">{activeReactions.payload.prompt}</p>
+1844:                       <p className="mt-3 text-sm soft-text">
+1845:                         {Object.values(activeReactions.reactionCounts).reduce((a, b) => a + b, 0)} reactions so far
+1846:                       </p>
+1847:                     </>
+1848:                   )}
+1849:                   {activeOpenText && (
+1850:                     <>
+1851:                       <p className="text-sm font-medium soft-text">Open text active</p>
+1852:                       <p className="mt-2 text-xl font-semibold tracking-tight truncate">{activeOpenText.payload.prompt}</p>
+1853:                       <p className="mt-3 text-sm soft-text">
+1854:                         {activeOpenText.responseCount} responses collected
+1855:                       </p>
+1856:                     </>
+1857:                   )}
+1858:                   {activeCountdown && (
+1859:                     <>
+1860:                       <p className="text-sm font-medium soft-text">Countdown active</p>
+1861:                       <p className="mt-2 text-xl font-semibold tracking-tight truncate">{activeCountdown.payload.label}</p>
+1862:                       <p className="mt-3 text-sm soft-text">
+1863:                         {activeCountdown.payload.durationSeconds}s timer
+1864:                       </p>
+1865:                     </>
+1866:                   )}
+1867:                   {!snapshot.currentInteraction && !activeSlides && (
+1868:                     <p className="text-base leading-7 soft-text">
+1869:                       The audience is waiting in the blank lobby. Launch an interaction and this panel mirrors what they see.
+1870:                     </p>
+1871:                   )}
+1872:                   {!snapshot.currentInteraction && activeSlides && (
+1873:                     <p className="text-base leading-7 soft-text">
+1874:                       Slides are live. Use the slide controls below or switch to any interaction tool above.
+1875:                     </p>
+1876:                   )}
+1877:                 </div>
+1878:               </div>
+1879: 
+1880:               {/* ── Compact slide controls — floats here when slides are active but host has switched to another tool ── */}
+1881:               {activeSlides && mode !== "slides" && (
+1882:                 <div className="panel rounded-[28px] p-5 md:p-6">
+1883:                   <div className="flex items-center justify-between gap-3 min-w-0">
+1884:                     <div className="min-w-0 flex-1">
+1885:                       <p className="text-[10px] font-bold uppercase tracking-widest soft-text">Slides running</p>
+1886:                       <p className="mt-1 text-sm font-semibold truncate">
+1887:                         {activeSlides.payload.title ?? "Presentation"}
+1888:                       </p>
+1889:                       <p className="text-xs soft-text tabular-nums">
+1890:                         Slide {activeSlides.payload.currentSlideIndex + 1} / {activeSlides.payload.totalSlides}
+1891:                       </p>
+1892:                     </div>
+1893:                     <button
+1894:                       className="ghost-button inline-flex h-8 shrink-0 items-center justify-center rounded-full px-3 text-xs font-semibold"
+1895:                       onClick={() => { resetSlideLocalState(); closeSlides(); }}
+1896:                       type="button"
+1897:                     >
+1898:                       End
+1899:                     </button>
+1900:                   </div>
+1901:                   <div className="mt-3 flex items-center gap-2">
