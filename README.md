@@ -96,7 +96,10 @@ Best for classrooms, local meetups, or offline events. **No internet required** 
 | :--- | :--- | :--- |
 | `NEXT_PUBLIC_MODE` | `local` | Set to `cloud` when deploying to production. |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | The public URL shown in QR codes. |
-| `NEXT_PUBLIC_PARTYKIT_HOST` | `localhost:3001` | The WebSocket server address. |
+| `NEXT_PUBLIC_PARTYKIT_HOST` | `localhost:3001` | Public PartyKit host used by the browser for realtime websocket connections. |
+| `PARTYKIT_SERVER_URL` | `http://localhost:3001` | Server-side PartyKit base URL used only by the Next.js API routes. |
+
+For Vercel deployments, keep `NEXT_PUBLIC_PARTYKIT_HOST` pointed at the public PartyKit domain and set `PARTYKIT_SERVER_URL` only in the server environment so browser code never needs to fetch the PartyKit REST endpoint directly.
 
 ---
 
