@@ -20,7 +20,7 @@ const snapshotSchema = z.object({
     .passthrough()
     .nullable(),
   participantCount: z.number(),
-  activeHosts: z.number(),
+  activeHosts: z.number().optional().default(0),
   createdAt: z.string()
 });
 
