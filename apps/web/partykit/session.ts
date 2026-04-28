@@ -1218,12 +1218,22 @@ export default class SessionServer implements Party.Server {
   async onRequest(request: Party.Request) {
     this.bumpAlarm();
 
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization"
+    };
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 200, headers: corsHeaders });
+    }
+
     if (request.method === "GET") {
       if (!this.state.hostToken) {
-        return Response.json({ error: "Session not found." }, { status: 404 });
+        return Response.json({ error: "Session not found." }, { status: 404, headers: corsHeaders });
       }
 
-      return Response.json(snapshotFromState(this.state));
+      return Response.json(snapshotFromState(this.state), { headers: corsHeaders });
     }
 
     if (request.method === "POST") {
@@ -1237,12 +1247,12 @@ export default class SessionServer implements Party.Server {
       if (action === "initialize_session") {
         if (!payload.hostToken) {
           console.warn(`[POST] Invalid initialize_session payload for room ${this.room.id}.`);
-          return Response.json({ error: "Invalid session initialization request." }, { status: 400 });
+          return Response.json({ error: "Invalid session initialization request." }, { status: 400, headers: corsHeaders });
         }
 
         if (this.state.hostToken) {
           console.warn(`[POST] Session already exists for room ${this.room.id}.`);
-          return Response.json({ error: "Session already exists." }, { status: 409 });
+          return Response.json({ error: "Session already exists." }, { status: 409, headers: corsHeaders });
         }
 
         this.state = {
@@ -1262,42 +1272,41 @@ export default class SessionServer implements Party.Server {
           this.room.storage.put("lastActiveSlideIndex", this.state.lastActiveSlideIndex)
         ]);
 
-        return Response.json(snapshotFromState(this.state), { status: 201 });
+        return Response.json(snapshotFromState(this.state), { status: 201, headers: corsHeaders });
       }
 
       if (action === "get_history") {
         if (!payload.hostToken || !this.isValidHost(payload.hostToken)) {
-          return Response.json({ error: "Unauthorized history request." }, { status: 403 });
+          return Response.json({ error: "Unauthorized history request." }, { status: 403, headers: corsHeaders });
         }
 
         return Response.json({
           sessionCode: this.room.id,
           history: this.state.history
-        });
+        }, { headers: corsHeaders });
       }
 
       if (action === "get_metrics") {
         if (!payload.hostToken || !this.isValidHost(payload.hostToken)) {
-          return Response.json({ error: "Unauthorized metrics request." }, { status: 403 });
+          return Response.json({ error: "Unauthorized metrics request." }, { status: 403, headers: corsHeaders });
         }
 
-        return Response.json(this.buildSessionMetricsSnapshot(new Date().toISOString()));
+        return Response.json(this.buildSessionMetricsSnapshot(new Date().toISOString()), { headers: corsHeaders });
       }
-
 
       if (action === "close_session" || action === "client.close_session") {
         if (!payload.hostToken || !this.isValidHost(payload.hostToken)) {
-          return Response.json({ error: "Close session rejected." }, { status: 403 });
+          return Response.json({ error: "Close session rejected." }, { status: 403, headers: corsHeaders });
         }
 
         await this.closeSessionRoom();
-        return Response.json({ ok: true });
+        return Response.json({ ok: true }, { headers: corsHeaders });
       }
 
-      return Response.json({ error: "Invalid session action." }, { status: 400 });
+      return Response.json({ error: "Invalid session action." }, { status: 400, headers: corsHeaders });
     }
 
-    return Response.json({ error: "Method not allowed." }, { status: 405 });
+    return Response.json({ error: "Method not allowed." }, { status: 405, headers: corsHeaders });
   }
 
   private isValidHost(hostToken: string) {
