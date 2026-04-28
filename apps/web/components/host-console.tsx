@@ -24,7 +24,6 @@ import { HostGuideModal } from "@/components/host/host-guide-modal";
 import { SessionEndModal } from "@/components/host/SessionEndModal";
 import { MultiDeviceBadge } from "@/components/host/multi-device-badge";
 import { downloadSessionMetricsReport, type ReportFormat } from "@/lib/exportReport";
-import { closeSessionRoom } from "@/lib/party-admin";
 import { useSessionConnection } from "@/lib/use-session-connection";
 import { useVoiceCommands } from "@/lib/use-voice-commands";
 import { useHostLayout } from "@/hooks/use-host-layout";
@@ -936,7 +935,23 @@ export function HostConsole({
       setSessionEndError(null);
       setSessionEndModalOpen(false);
       resetSlideLocalState();
-      await closeSessionRoom(sessionCode, hostToken);
+
+      const response = await fetch(`/api/sessions/${sessionCode}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "close_session",
+          hostToken
+        }),
+        cache: "no-store"
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? "Could not close the session.");
+      }
     } catch (caught) {
       setSessionEndError(caught instanceof Error ? caught.message : "Could not close the session.");
       setSessionEndBusy(false);
