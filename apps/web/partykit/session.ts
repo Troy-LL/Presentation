@@ -1284,6 +1284,7 @@ export default class SessionServer implements Party.Server {
         return Response.json(this.buildSessionMetricsSnapshot(new Date().toISOString()));
       }
 
+
       if (action === "close_session" || action === "client.close_session") {
         if (!payload.hostToken || !this.isValidHost(payload.hostToken)) {
           return Response.json({ error: "Close session rejected." }, { status: 403 });

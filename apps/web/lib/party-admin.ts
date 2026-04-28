@@ -25,7 +25,17 @@ const snapshotSchema = z.object({
 });
 
 function getPartyBaseUrl() {
-  let url = process.env.PARTYKIT_SERVER_URL ?? "http://127.0.0.1:1999";
+  let url = process.env.PARTYKIT_SERVER_URL;
+  if (!url) {
+    const publicHost = process.env.NEXT_PUBLIC_PARTYKIT_HOST;
+    if (publicHost) {
+      url = publicHost.includes("127.0.0.1") || publicHost.includes("localhost")
+        ? `http://${publicHost}`
+        : `https://${publicHost}`;
+    } else {
+      url = "http://127.0.0.1:1999";
+    }
+  }
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
     url = `https://${url}`;
   }

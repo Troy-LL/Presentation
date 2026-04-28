@@ -985,7 +985,12 @@ export function HostConsole({
       setSessionEndPhase("download");
       setSessionEndCountdown(SESSION_END_AUTO_DISMISS_SECONDS);
     } catch (caught) {
-      setSessionEndError(caught instanceof Error ? caught.message : "Could not prepare session report.");
+      setSessionEndError(
+        caught instanceof Error
+          ? `${caught.message} Closing session without report export.`
+          : "Could not prepare session report. Closing session without report export."
+      );
+      await finalizeSessionClosure();
     } finally {
       setSessionEndBusy(false);
     }
@@ -1568,7 +1573,7 @@ export function HostConsole({
                               onClick={() => setCorrectOptionIndex(i)}
                               type="button"
                             >
-                              âœ“
+                              ✓
                             </button>
                             <input
                               className="flex-1 rounded-[16px] border border-black/10 bg-white px-4 py-3 text-base outline-none focus:border-black"
