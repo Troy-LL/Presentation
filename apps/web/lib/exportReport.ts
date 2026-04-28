@@ -4,7 +4,10 @@ import "jspdf-autotable";
 
 declare module "jspdf" {
   interface jsPDF {
-    autoTable: any;
+    autoTable: (options: unknown) => void;
+    lastAutoTable?: {
+      finalY: number;
+    };
   }
 }
 
@@ -21,8 +24,8 @@ function formatDuration(seconds: number | null) {
   const h = Math.floor(safeSeconds / 3600);
   const m = Math.floor((safeSeconds % 3600) / 60);
   const s = safeSeconds % 60;
-  
-  const parts = [];
+
+  const parts: string[] = [];
   if (h > 0) parts.push(`${h}h`);
   if (m > 0) parts.push(`${m}m`);
   parts.push(`${s}s`);
@@ -141,7 +144,7 @@ function buildCsv(metrics: SessionMetrics) {
 
 async function buildPdf(metrics: SessionMetrics) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
-  
+
   // ─── Header ────────────────────────────────────────────────────────────────
   doc.setFontSize(22);
   doc.setTextColor(15, 23, 42); // slate-900
@@ -177,7 +180,7 @@ async function buildPdf(metrics: SessionMetrics) {
   });
 
   // ─── Interactions Table ────────────────────────────────────────────────────
-  let lastY = (doc as any).lastAutoTable.finalY + 30;
+  let lastY = (doc.lastAutoTable?.finalY ?? 105) + 30;
 
   doc.setFontSize(14);
   doc.setTextColor(15, 23, 42);
@@ -205,7 +208,7 @@ async function buildPdf(metrics: SessionMetrics) {
   });
 
   // ─── Detailed Breakdowns ───────────────────────────────────────────────────
-  lastY = (doc as any).lastAutoTable.finalY + 30;
+  lastY = (doc.lastAutoTable?.finalY ?? lastY) + 30;
 
   metrics.interactionMetrics.forEach((im, index) => {
     // Check if we need a new page
@@ -234,7 +237,7 @@ async function buildPdf(metrics: SessionMetrics) {
         theme: "plain",
         headStyles: { fillColor: [241, 245, 249], textColor: [71, 85, 105] },
       });
-      lastY = (doc as any).lastAutoTable.finalY + 25;
+      lastY = (doc.lastAutoTable?.finalY ?? lastY) + 25;
     } else if (im.openTextResponses && im.openTextResponses.length > 0) {
       doc.autoTable({
         startY: lastY,
@@ -244,7 +247,7 @@ async function buildPdf(metrics: SessionMetrics) {
         theme: "plain",
         headStyles: { fillColor: [241, 245, 249], textColor: [71, 85, 105] },
       });
-      lastY = (doc as any).lastAutoTable.finalY + 25;
+      lastY = (doc.lastAutoTable?.finalY ?? lastY) + 25;
     } else {
       lastY += 10;
     }

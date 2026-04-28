@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 type Props = {
   isOpen: boolean;
   onClose: () => void;
@@ -50,7 +48,7 @@ export function HostGuideModal({ isOpen, onClose }: Props) {
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-black/5 bg-white/50 p-4">
                   <h4 className="font-bold text-slate-800">Crowd Prompt</h4>
-                  <p className="mt-1 text-sm soft-text">Ask a question or share a thought. It appears live on everyone's screen.</p>
+                  <p className="mt-1 text-sm soft-text">Ask a question or share a thought. It appears live on everyone&apos;s screen.</p>
                 </div>
                 <div className="rounded-2xl border border-black/5 bg-white/50 p-4">
                   <h4 className="font-bold text-slate-800">Live Polls & Quizzes</h4>
@@ -82,17 +80,17 @@ export function HostGuideModal({ isOpen, onClose }: Props) {
                 <div className="flex items-center justify-between gap-4 border-b border-black/5 pb-3">
                   <span className="text-sm font-medium text-slate-700">Navigate Slides</span>
                   <div className="flex gap-1.5">
-                    <kbd className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold shadow-sm">"Next slide"</kbd>
-                    <kbd className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold shadow-sm">"Go back"</kbd>
+                    <kbd className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold shadow-sm">&quot;Next slide&quot;</kbd>
+                    <kbd className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold shadow-sm">&quot;Go back&quot;</kbd>
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-4 border-b border-black/5 pb-3">
                   <span className="text-sm font-medium text-slate-700">Clear Screen</span>
-                  <kbd className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold shadow-sm">"Back to lobby"</kbd>
+                  <kbd className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold shadow-sm">&quot;Back to lobby&quot;</kbd>
                 </div>
                 <div className="flex items-center justify-between gap-4 border-b border-black/5 pb-3">
                   <span className="text-sm font-medium text-slate-700">Close Interaction</span>
-                  <kbd className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold shadow-sm">"Close it"</kbd>
+                  <kbd className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold shadow-sm">&quot;Close it&quot;</kbd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-sm font-medium text-slate-700">Custom Triggers</span>
@@ -111,7 +109,7 @@ export function HostGuideModal({ isOpen, onClose }: Props) {
                 Mobile Remote
               </h3>
               <p className="mt-3 text-sm leading-relaxed soft-text">
-                Don't stay tied to the computer. Click the <span className="font-bold text-slate-800">Host Device</span> badge in the header, scan the QR code with your phone, and use it as a remote clicker to launch interactions and change slides from anywhere in the room.
+                Don&apos;t stay tied to the computer. Click the <span className="font-bold text-slate-800">Host Device</span> badge in the header, scan the QR code with your phone, and use it as a remote clicker to launch interactions and change slides from anywhere in the room.
               </p>
             </section>
           </div>

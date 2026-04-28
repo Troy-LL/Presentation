@@ -152,14 +152,14 @@ export default function HomePage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-xs font-bold text-white mb-5 mx-auto sm:mx-0">1</div>
             <h3 className="font-bold text-slate-900">Create a Session</h3>
             <p className="mt-2 text-sm soft-text leading-relaxed">
-              Launch a room in seconds. No account required. You'll get a unique code to share with your audience.
+              Launch a room in seconds. No account required. You&apos;ll get a unique code to share with your audience.
             </p>
           </div>
           <div className="text-center sm:text-left">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-xs font-bold text-white mb-5 mx-auto sm:mx-0">2</div>
             <h3 className="font-bold text-slate-900">Audience Joins</h3>
             <p className="mt-2 text-sm soft-text leading-relaxed">
-              Participants enter the code or scan a QR on their phones. They'll wait in a lobby until you launch an interaction.
+              Participants enter the code or scan a QR on their phones. They&apos;ll wait in a lobby until you launch an interaction.
             </p>
           </div>
           <div className="text-center sm:text-left">
