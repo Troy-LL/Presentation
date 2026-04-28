@@ -101,6 +101,25 @@ function parseReactionEmojis(input: string) {
     .slice(0, 8);
 }
 
+function parseVoicePhrases(trigger: string | undefined) {
+  if (!trigger) return [];
+  return Array.from(
+    new Set(
+      trigger
+        .split(/[\n,;|]+/)
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 12);
+}
+
+function formatVoicePhrasesForBadge(trigger: string | undefined) {
+  const phrases = parseVoicePhrases(trigger);
+  if (phrases.length === 0) return null;
+  if (phrases.length === 1) return phrases[0];
+  return `${phrases[0]} +${phrases.length - 1}`;
+}
+
 function statLabel(value: string, label: string) {
   return (
     <div className="card-hover flex h-full flex-col overflow-hidden rounded-[22px] border border-black/8 bg-white/80 p-5">
@@ -230,11 +249,11 @@ export function HostConsole({
   const [sessionEndBusy, setSessionEndBusy] = useState(false);
   const [sessionEndCountdown, setSessionEndCountdown] = useState(SESSION_END_AUTO_DISMISS_SECONDS);
 
-  // â”€â”€ Mode switcher & Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Mode switcher & Layout ────────────────────────
   const [mode, setMode] = useState<Mode>("prompt");
   const { layoutMode, variant, setVariant } = useHostLayout();
 
-  // â”€â”€ Prompt state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Prompt state ─────────────────────────────
   const [draft, setDraft] = useState("");
   const [presets, setPresets] = useState<HostPreset[]>([]);
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
@@ -242,7 +261,7 @@ export function HostConsole({
   const [editingTriggerConfidence, setEditingTriggerConfidence] = useState(0.75);
   const [highlightedPresetId, setHighlightedPresetId] = useState<string | null>(null);
 
-  // â”€â”€ Poll state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Poll state ──────────────────────────────
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState<string[]>(EMPTY_OPTIONS);
   const [quizQuestion, setQuizQuestion] = useState("");
@@ -291,7 +310,7 @@ export function HostConsole({
     lastTriggeredSlideRef.current = null;
   };
 
-  // â”€â”€ Voice Activation state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Voice Activation state ────────────────────────
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [voiceConfidence, setVoiceConfidence] = useState(0.75);
   const [voiceMode, setVoiceMode] = useState<VoiceListeningMode>("continuous");
@@ -301,7 +320,7 @@ export function HostConsole({
   const [showGuide, setShowGuide] = useState(false);
   const isCloudMode = process.env.NEXT_PUBLIC_MODE === "cloud";
 
-  // â”€â”€ Presets persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Presets persistence ─────────────────────────
   useEffect(() => {
     if (!isCloudMode) {
       const savedPresets = localStorage.getItem("host-presets-v2");
@@ -362,12 +381,13 @@ export function HostConsole({
   };
 
   const updatePresetVoiceTrigger = (id: string, trigger: string, triggerConfidence?: number) => {
+    const normalizedTrigger = parseVoicePhrases(trigger).join("; ");
     const next = presets.map((p) =>
       p.id === id
         ? {
             ...p,
-            voiceTrigger: trigger.trim() || undefined,
-            triggerConfidence: trigger.trim()
+            voiceTrigger: normalizedTrigger || undefined,
+            triggerConfidence: normalizedTrigger
               ? (Number.isFinite(triggerConfidence)
                 ? Math.min(1, Math.max(0.5, triggerConfidence as number))
                 : p.triggerConfidence)
@@ -378,7 +398,7 @@ export function HostConsole({
     persistPresets(next);
   };
 
-  // â”€â”€ Token resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Token resolution ───────────────────────────
   useEffect(() => {
     if (typeof window === "undefined") return;
     const storageKey = `host-token:${sessionCode}`;
@@ -392,7 +412,7 @@ export function HostConsole({
     setLoadError("This host room needs a valid host link. Start from /host/new to create one.");
   }, [sessionCode, tokenFromUrl]);
 
-  // â”€â”€ Initial snapshot fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Initial snapshot fetch ────────────────────────
   useEffect(() => {
     let active = true;
     async function load() {
@@ -477,44 +497,60 @@ export function HostConsole({
     updateVoiceSession
   ]);
 
-  // â”€â”€ Voice Commands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Voice Commands ────────────────────────────
   const voiceCommands = useMemo(() => {
-    // Built-in global commands â€” ordered longest phrase first to prevent short-phrase shadowing
+    // Built-in global commands — ordered longest phrase first to prevent short-phrase shadowing
     const globals = [
       {
         id: "global:back_to_lobby",
         // Listed BEFORE prev_slide so "back to lobby" doesn't get eaten by "go back"
-        phrases: ["back to lobby", "clear screen", "go to lobby", "return to lobby"],
+        phrases: [
+          "back to lobby",
+          "clear screen",
+          "go to lobby",
+          "return to lobby",
+          "show lobby",
+          "reset screen"
+        ],
         action: clearInteraction,
       },
       {
         id: "global:next_slide",
-        phrases: ["next slide", "advance slide", "go forward"],
+        phrases: ["next slide", "advance slide", "go forward", "move forward", "continue slide"],
         action: nextSlide,
       },
       {
         id: "global:prev_slide",
-        phrases: ["go back", "previous slide", "go to previous"],
+        phrases: ["go back", "previous slide", "go to previous", "back one slide", "last slide"],
         action: prevSlide,
       },
       {
         id: "global:end_interaction",
-        phrases: ["end poll", "close it", "stop poll", "stop quiz", "end quiz", "close interaction"],
+        phrases: [
+          "end poll",
+          "close it",
+          "stop poll",
+          "stop quiz",
+          "end quiz",
+          "close interaction",
+          "clear prompt",
+          "end interaction"
+        ],
         action: clearInteraction,
       },
       {
         id: "global:start_timer",
-        phrases: ["start timer", "launch timer", "start countdown"],
+        phrases: ["start timer", "launch timer", "start countdown", "begin countdown", "start the clock"],
         action: () => startCountdown(countdownLabel, countdownSeconds),
       },
     ];
 
     // Per-preset voice triggers
     const presetCommands = presets
-      .filter((p) => p.voiceTrigger?.trim())
+      .filter((p) => parseVoicePhrases(p.voiceTrigger).length > 0)
       .map((p) => ({
         id: `preset:${p.id}`,
-        phrases: [p.voiceTrigger!.trim()],
+        phrases: parseVoicePhrases(p.voiceTrigger),
         action: () => startPrompt(p.text),
         confidence: p.triggerConfidence,
       }));
@@ -556,7 +592,7 @@ export function HostConsole({
     }
   });
 
-  // â”€â”€ Prompt before closing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Prompt before closing ────────────────────────
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       // Prompt warning unless explicitly closed
@@ -996,7 +1032,7 @@ export function HostConsole({
     return () => window.clearInterval(timer);
   }, [sessionEndBusy, sessionEndModalOpen, sessionEndPhase]);
 
-  // â”€â”€ Loading / error states â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─ Loading / error states ────────────────────────
   if (loading) {
     return (
       <main className="app-shell flex items-center justify-center px-6 py-10">
@@ -1294,7 +1330,7 @@ export function HostConsole({
                   <div className="flex-1 min-w-0">
 
 
-                  {/* â”€â”€ Prompt mode â”€â”€ */}
+                  {/* ─ Prompt mode ─ */}
                   {mode === "prompt" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Push one message to every phone</h2>
@@ -1359,10 +1395,10 @@ export function HostConsole({
                                     {preset.text.length > 30 ? `${preset.text.substring(0, 30)}...` : preset.text}
                                   </button>
                                   {/* Voice trigger badge */}
-                                  {preset.voiceTrigger && (
+                                  {formatVoicePhrasesForBadge(preset.voiceTrigger) && (
                                     <span className="mr-2 flex items-center gap-1 rounded-full bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]">
                                       <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /></svg>
-                                      {preset.voiceTrigger}
+                                      {formatVoicePhrasesForBadge(preset.voiceTrigger)}
                                     </span>
                                   )}
                                   {/* Edit trigger toggle */}
@@ -1373,7 +1409,7 @@ export function HostConsole({
                                         setEditingPresetId(null);
                                       } else {
                                         setEditingPresetId(preset.id);
-                                        setEditingVoiceTrigger(preset.voiceTrigger ?? "");
+                                        setEditingVoiceTrigger((parseVoicePhrases(preset.voiceTrigger)).join("; "));
                                         setEditingTriggerConfidence(preset.triggerConfidence ?? voiceConfidence);
                                       }
                                     }}
@@ -1393,16 +1429,17 @@ export function HostConsole({
                                     </svg>
                                   </button>
                                 </div>
-                                {/* Voice trigger editor â€” expands on mic icon click */}
+                                {/* Voice trigger editor — expands on mic icon click */}
                                 {editingPresetId === preset.id && (
                                   <div className="border-t border-black/5 px-4 py-3">
                                     <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest soft-text">When I say...</p>
+                                    <p className="mb-2 text-[11px] soft-text">Use multiple aliases separated by commas, semicolons, or new lines.</p>
                                     <div className="flex gap-2">
                                       <input
                                         autoFocus
                                         className="flex-1 rounded-full border border-black/10 bg-white/80 px-3 py-1.5 text-sm outline-none focus:border-[var(--accent)]"
                                         onChange={(e) => setEditingVoiceTrigger(e.target.value)}
-                                        placeholder="e.g. let's vote"
+                                        placeholder="e.g. let's vote; start voting; launch poll"
                                         type="text"
                                         value={editingVoiceTrigger}
                                       />
@@ -1426,7 +1463,7 @@ export function HostConsole({
                                       >
                                         Save
                                       </button>
-                                      {preset.voiceTrigger && (
+                                      {parseVoicePhrases(preset.voiceTrigger).length > 0 && (
                                         <button
                                           className="ghost-button rounded-full px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-500"
                                           onClick={() => {
@@ -1449,7 +1486,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* â”€â”€ Poll mode â”€â”€ */}
+                  {/* ─ Poll mode ─ */}
                   {mode === "poll" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Create a live poll</h2>
@@ -1506,7 +1543,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* â”€â”€ Quiz mode â”€â”€ */}
+                  {/* ─ Quiz mode ─ */}
                   {mode === "quiz" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Create a live quiz</h2>
@@ -1579,7 +1616,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* â”€â”€ Reactions mode â”€â”€ */}
+                  {/* ─ Reactions mode ─ */}
                   {mode === "reactions" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Start emoji reactions</h2>
@@ -1612,7 +1649,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* â”€â”€ Open text mode â”€â”€ */}
+                  {/* ─ Open text mode ─ */}
                   {mode === "open_text" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Start open text responses</h2>
@@ -1636,7 +1673,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* â”€â”€ Countdown mode â”€â”€ */}
+                  {/* ─ Countdown mode ─ */}
                   {mode === "countdown" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Start countdown timer</h2>
@@ -1681,7 +1718,7 @@ export function HostConsole({
                     </div>
                   )}
 
-                  {/* â”€â”€ Slides mode â”€â”€ */}
+                  {/* ─ Slides mode ─ */}
                   {mode === "slides" && (
                     <div className="mt-6">
                       <h2 className="text-xl font-semibold tracking-tight">Start synced slides</h2>
@@ -1899,3 +1936,5 @@ export function HostConsole({
     </>
   );
 }
+
+

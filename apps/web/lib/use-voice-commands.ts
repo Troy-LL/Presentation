@@ -29,6 +29,56 @@ type SpeechRecognitionLike = {
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
+const FILLER_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "can",
+  "could",
+  "do",
+  "for",
+  "hey",
+  "i",
+  "just",
+  "me",
+  "my",
+  "please",
+  "show",
+  "so",
+  "some",
+  "the",
+  "to",
+  "uh",
+  "um",
+  "we",
+  "would",
+  "you"
+]);
+
+const TERM_SYNONYMS: Record<string, string> = {
+  backward: "back",
+  begin: "start",
+  clear: "close",
+  continue: "resume",
+  countdown: "timer",
+  finish: "end",
+  forward: "next",
+  launch: "start",
+  previous: "prev",
+  prior: "prev",
+  question: "prompt",
+  quiz: "poll",
+  resume: "start",
+  return: "back",
+  stop: "end",
+  timer: "countdown"
+};
+
+type MatchScore = {
+  score: number;
+  matchedPhrase: string;
+};
+
 export interface VoiceCommand {
   id?: string;
   phrases: string[];
@@ -45,29 +95,91 @@ interface UseVoiceCommandsProps {
   onMatch?: (phrase: string, commandId?: string) => void;
 }
 
-/**
- * Token-intersection fuzzy matcher.
- *
- * Splits both the transcript and the trigger phrase into word tokens and checks
- * what fraction of the phrase's tokens appear anywhere in the transcript.
- * A match is declared when at least `threshold` of the phrase words are present.
- *
- * Examples:
- *   fuzzyMatch("alright let's now do a vote", "let's vote", 0.7) → true  (2/2 = 100%)
- *   fuzzyMatch("next please", "next slide", 0.5) → true  (1/2 = 50% >= 0.5)
- *   fuzzyMatch("hello world", "end poll", 0.7) → false  (0/2 = 0%)
- */
-function fuzzyMatch(transcript: string, phrase: string, threshold = 0.8): boolean {
-  const phraseTokens = phrase.toLowerCase().split(/\s+/);
-  const transcriptTokens = transcript.toLowerCase().split(/\s+/);
+function normalizeText(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/\b(lets|let's)\b/g, "let us")
+    .replace(/\bwhats\b/g, "what is")
+    .replace(/\bim\b/g, "i am")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  const matchCount = phraseTokens.filter((token) =>
-    transcriptTokens.some(
-      (t) => t === token || t.startsWith(token) || token.startsWith(t)
-    )
-  ).length;
+function tokenize(text: string): string[] {
+  if (!text) return [];
 
-  return matchCount / phraseTokens.length >= threshold;
+  return text
+    .split(/\s+/)
+    .map((token) => TERM_SYNONYMS[token] ?? token)
+    .filter((token) => token && !FILLER_WORDS.has(token));
+}
+
+function computeOrderedCoverage(transcriptTokens: string[], phraseTokens: string[]): number {
+  if (phraseTokens.length === 0) return 0;
+
+  let cursor = 0;
+  let matched = 0;
+
+  for (const phraseToken of phraseTokens) {
+    while (cursor < transcriptTokens.length) {
+      const spokenToken = transcriptTokens[cursor];
+      cursor += 1;
+      if (
+        spokenToken === phraseToken ||
+        spokenToken.startsWith(phraseToken) ||
+        phraseToken.startsWith(spokenToken)
+      ) {
+        matched += 1;
+        break;
+      }
+    }
+  }
+
+  return matched / phraseTokens.length;
+}
+
+function findBestPhraseMatch(transcript: string, phrases: string[]): MatchScore | null {
+  const normalizedTranscript = normalizeText(transcript);
+  const transcriptTokens = tokenize(normalizedTranscript);
+
+  let best: MatchScore | null = null;
+
+  for (const phrase of phrases) {
+    const normalizedPhrase = normalizeText(phrase);
+    if (!normalizedPhrase) continue;
+
+    // Fast path for exact substring matches after normalization.
+    if (
+      normalizedTranscript === normalizedPhrase ||
+      normalizedTranscript.includes(` ${normalizedPhrase} `) ||
+      normalizedTranscript.startsWith(`${normalizedPhrase} `) ||
+      normalizedTranscript.endsWith(` ${normalizedPhrase}`)
+    ) {
+      return { matchedPhrase: phrase, score: 1 };
+    }
+
+    const phraseTokens = tokenize(normalizedPhrase);
+    if (phraseTokens.length === 0) continue;
+
+    const orderedCoverage = computeOrderedCoverage(transcriptTokens, phraseTokens);
+    const tokenCoverage =
+      phraseTokens.filter((token) =>
+        transcriptTokens.some(
+          (spoken) =>
+            spoken === token || spoken.startsWith(token) || token.startsWith(spoken)
+        )
+      ).length / phraseTokens.length;
+
+    // Weighted towards in-order recognition, but allows flexible spoken variants.
+    const score = orderedCoverage * 0.65 + tokenCoverage * 0.35;
+
+    if (!best || score > best.score) {
+      best = { matchedPhrase: phrase, score };
+    }
+  }
+
+  return best;
 }
 
 /**
@@ -173,14 +285,14 @@ export function useVoiceCommands({
       for (const cmd of commands) {
         const threshold = cmd.confidence ?? minConfidence;
 
-        const matched = cmd.phrases.some((phrase) =>
-          fuzzyMatch(transcript, phrase, threshold)
-        );
+        const phraseMatch = findBestPhraseMatch(transcript, cmd.phrases);
+        const phraseThreshold = Math.max(0.55, threshold - 0.2);
+        const matched = Boolean(phraseMatch && phraseMatch.score >= phraseThreshold);
 
-        if (matched && confidence >= threshold) {
-          const matchedPhrase = cmd.phrases[0];
+        if (matched && confidence >= threshold && phraseMatch) {
+          const matchedPhrase = phraseMatch.matchedPhrase;
           console.log(
-            `[Voice] "${transcript}" -> "${matchedPhrase}" (confidence ${confidence.toFixed(2)})`
+            `[Voice] "${transcript}" -> "${matchedPhrase}" (speech ${confidence.toFixed(2)}, phrase ${phraseMatch.score.toFixed(2)})`
           );
           setLastMatchedPhrase(matchedPhrase);
           onMatch?.(matchedPhrase, cmd.id);

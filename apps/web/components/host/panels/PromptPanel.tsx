@@ -2,6 +2,25 @@
 
 import type { HostPreset } from "@interactive-presentation/types";
 
+function parseVoicePhrases(trigger: string | undefined) {
+  if (!trigger) return [];
+  return Array.from(
+    new Set(
+      trigger
+        .split(/[\n,;|]+/)
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 12);
+}
+
+function formatVoicePhrasesForBadge(trigger: string | undefined) {
+  const phrases = parseVoicePhrases(trigger);
+  if (phrases.length === 0) return null;
+  if (phrases.length === 1) return phrases[0];
+  return `${phrases[0]} +${phrases.length - 1}`;
+}
+
 interface Props {
   draft: string;
   isClosed: boolean;
@@ -112,10 +131,10 @@ export function PromptPanel({
                   </button>
 
                   {/* Voice trigger badge */}
-                  {preset.voiceTrigger && (
+                  {formatVoicePhrasesForBadge(preset.voiceTrigger) && (
                     <span className="mr-2 flex items-center gap-1 rounded-full bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]">
                       <MicIcon />
-                      {preset.voiceTrigger}
+                      {formatVoicePhrasesForBadge(preset.voiceTrigger)}
                     </span>
                   )}
 
@@ -148,12 +167,13 @@ export function PromptPanel({
                 {editingPresetId === preset.id && (
                   <div className="border-t border-black/5 px-4 py-3">
                     <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest soft-text">When I say…</p>
+                    <p className="mb-2 text-[11px] soft-text">Use multiple aliases separated by commas, semicolons, or new lines.</p>
                     <div className="flex gap-2">
                       <input
                         autoFocus
                         className="flex-1 rounded-full border border-black/10 bg-white/80 px-3 py-1.5 text-sm outline-none focus:border-[var(--accent)]"
                         onChange={(e) => onEditingVoiceTriggerChange(e.target.value)}
-                        placeholder="e.g. let's vote"
+                        placeholder="e.g. let's vote; start voting; launch poll"
                         type="text"
                         value={editingVoiceTrigger}
                       />
@@ -177,7 +197,7 @@ export function PromptPanel({
                       >
                         Save
                       </button>
-                      {preset.voiceTrigger && (
+                      {parseVoicePhrases(preset.voiceTrigger).length > 0 && (
                         <button
                           className="ghost-button rounded-full px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-500"
                           onClick={() => {
