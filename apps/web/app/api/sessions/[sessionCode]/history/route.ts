@@ -7,6 +7,9 @@ export async function GET(
   { params }: { params: Promise<{ sessionCode: string }> }
 ) {
   const { sessionCode } = await params;
+  if (!/^[A-Z0-9]{5}$/i.test(sessionCode)) {
+    return NextResponse.json({ error: "Invalid session code." }, { status: 400 });
+  }
   const url = new URL(request.url);
   const hostToken = url.searchParams.get("hostToken")?.trim();
 

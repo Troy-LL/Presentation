@@ -129,3 +129,26 @@ export async function getSessionMetrics(
   return (await response.json()) as SessionMetrics;
 }
 
+export async function closeSessionRoom(sessionCode: string, hostToken: string) {
+  const response = await fetch(roomUrl(sessionCode), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      action: "close_session",
+      hostToken
+    }),
+    cache: "no-store"
+  });
+
+  if (response.status === 404) {
+    throw new Error("Session not found.");
+  }
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? "Could not close the session.");
+  }
+}
+

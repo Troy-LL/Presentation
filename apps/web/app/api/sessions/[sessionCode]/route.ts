@@ -8,6 +8,10 @@ export async function GET(
 ) {
   const { sessionCode } = await params;
 
+  if (!/^[A-Z0-9]{5}$/i.test(sessionCode)) {
+    return NextResponse.json({ error: "Invalid session code." }, { status: 400 });
+  }
+
   try {
     const snapshot = await getSessionSnapshot(sessionCode.toUpperCase());
     return NextResponse.json(snapshot);

@@ -512,6 +512,33 @@ export default class SessionServer implements Party.Server {
     };
   }
 
+  private async closeSessionRoom() {
+    await this.archiveCurrentInteraction();
+
+    // Also finalize the slide deck if one is running
+    if (this.state.currentSlideDeck) {
+      const endedAt = new Date().toISOString();
+      this.state.currentSlideDeck.closedAt = endedAt;
+      this.finalizeInteractionMetric(this.state.currentSlideDeck, endedAt);
+      const entry = this.buildHistoryEntry(this.state.currentSlideDeck, endedAt);
+      this.state.history = [entry, ...this.state.history].slice(0, SessionServer.MAX_HISTORY_ENTRIES);
+      this.state.currentSlideDeck = null;
+    }
+
+    this.state.status = "closed";
+    const endedAt = new Date().toISOString();
+    this.state.sessionMetrics.endedAt = endedAt;
+    this.broadcast({
+      type: "server.session_closed",
+      endedAt
+    });
+    this.broadcast({
+      type: "server.session_snapshot",
+      snapshot: snapshotFromState(this.state)
+    });
+    await this.room.storage.deleteAll();
+  }
+
   private async archiveCurrentInteraction() {
     const current = this.state.currentInteraction;
     if (!current) return;
@@ -1183,30 +1210,7 @@ export default class SessionServer implements Party.Server {
           return;
         }
 
-        await this.archiveCurrentInteraction();
-
-        // Also finalize the slide deck if one is running
-        if (this.state.currentSlideDeck) {
-          const endedAt = new Date().toISOString();
-          this.state.currentSlideDeck.closedAt = endedAt;
-          this.finalizeInteractionMetric(this.state.currentSlideDeck, endedAt);
-          const entry = this.buildHistoryEntry(this.state.currentSlideDeck, endedAt);
-          this.state.history = [entry, ...this.state.history].slice(0, SessionServer.MAX_HISTORY_ENTRIES);
-          this.state.currentSlideDeck = null;
-        }
-
-        this.state.status = "closed";
-        const endedAt = new Date().toISOString();
-        this.state.sessionMetrics.endedAt = endedAt;
-        this.broadcast({
-          type: "server.session_closed",
-          endedAt
-        });
-        this.broadcast({
-          type: "server.session_snapshot",
-          snapshot: snapshotFromState(this.state)
-        });
-        await this.room.storage.deleteAll();
+        await this.closeSessionRoom();
         return;
     }
   }
@@ -1225,10 +1229,12 @@ export default class SessionServer implements Party.Server {
     if (request.method === "POST") {
       const payload = (await request.json()) as {
         action?: string;
+        type?: string;
         hostToken?: string;
       };
+      const action = payload.action ?? payload.type;
 
-      if (payload.action === "initialize_session") {
+      if (action === "initialize_session") {
         if (!payload.hostToken) {
           console.warn(`[POST] Invalid initialize_session payload for room ${this.room.id}.`);
           return Response.json({ error: "Invalid session initialization request." }, { status: 400 });
@@ -1259,7 +1265,7 @@ export default class SessionServer implements Party.Server {
         return Response.json(snapshotFromState(this.state), { status: 201 });
       }
 
-      if (payload.action === "get_history") {
+      if (action === "get_history") {
         if (!payload.hostToken || !this.isValidHost(payload.hostToken)) {
           return Response.json({ error: "Unauthorized history request." }, { status: 403 });
         }
@@ -1270,12 +1276,21 @@ export default class SessionServer implements Party.Server {
         });
       }
 
-      if (payload.action === "get_metrics") {
+      if (action === "get_metrics") {
         if (!payload.hostToken || !this.isValidHost(payload.hostToken)) {
           return Response.json({ error: "Unauthorized metrics request." }, { status: 403 });
         }
 
         return Response.json(this.buildSessionMetricsSnapshot(new Date().toISOString()));
+      }
+
+      if (action === "close_session" || action === "client.close_session") {
+        if (!payload.hostToken || !this.isValidHost(payload.hostToken)) {
+          return Response.json({ error: "Close session rejected." }, { status: 403 });
+        }
+
+        await this.closeSessionRoom();
+        return Response.json({ ok: true });
       }
 
       return Response.json({ error: "Invalid session action." }, { status: 400 });

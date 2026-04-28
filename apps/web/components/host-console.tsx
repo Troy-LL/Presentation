@@ -1,7 +1,7 @@
 "use client";
 
 import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import type {
@@ -24,6 +24,7 @@ import { HostGuideModal } from "@/components/host/host-guide-modal";
 import { SessionEndModal } from "@/components/host/SessionEndModal";
 import { MultiDeviceBadge } from "@/components/host/multi-device-badge";
 import { downloadSessionMetricsReport, type ReportFormat } from "@/lib/exportReport";
+import { closeSessionRoom } from "@/lib/party-admin";
 import { useSessionConnection } from "@/lib/use-session-connection";
 import { useVoiceCommands } from "@/lib/use-voice-commands";
 import { useHostLayout } from "@/hooks/use-host-layout";
@@ -438,7 +439,6 @@ export function HostConsole({
     revealQuizAnswer,
     clearInteraction,
     closeSlides,
-    closeSession,
     updateHostPresets,
     updateVoiceSession
   } = useSessionConnection({
@@ -578,6 +578,7 @@ export function HostConsole({
   const activeCountdown = snapshot?.currentInteraction?.type === "countdown" ? snapshot.currentInteraction : null;
   const activeSlides = snapshot?.currentSlideDeck ?? null;
   const activePrompt = snapshot?.currentInteraction?.type === "prompt" ? snapshot.currentInteraction : null;
+  const deferredSnapshot = useDeferredValue(snapshot);
 
   const roomStateLabel = isClosed
     ? "Closed"
@@ -596,7 +597,7 @@ export function HostConsole({
                   ? "Slides live"
                   : "Prompt live"
       : "Lobby idle";
-  const analytics = calculateHostAnalytics(snapshot);
+  const analytics = useMemo(() => calculateHostAnalytics(deferredSnapshot), [deferredSnapshot]);
   const currentInteractionId = snapshot?.currentInteraction?.id ?? null;
 
   // poll option helpers
@@ -888,22 +889,33 @@ export function HostConsole({
     setSessionEndError(null);
   };
 
-  const finalizeSessionClosure = () => {
-    setSessionEndBusy(true);
-    setSessionEndModalOpen(false);
-    resetSlideLocalState();
-    closeSession();
+  const finalizeSessionClosure = async () => {
+    if (!hostToken) {
+      setSessionEndError("Host token missing.");
+      return;
+    }
+
+    try {
+      setSessionEndBusy(true);
+      setSessionEndError(null);
+      setSessionEndModalOpen(false);
+      resetSlideLocalState();
+      await closeSessionRoom(sessionCode, hostToken);
+    } catch (caught) {
+      setSessionEndError(caught instanceof Error ? caught.message : "Could not close the session.");
+      setSessionEndBusy(false);
+    }
   };
 
   const autoCloseSessionRef = useRef(() => {
     setSessionEndError(null);
-    finalizeSessionClosure();
+    void finalizeSessionClosure();
   });
 
   useEffect(() => {
     autoCloseSessionRef.current = () => {
       setSessionEndError(null);
-      finalizeSessionClosure();
+      void finalizeSessionClosure();
     };
   });
 
@@ -953,7 +965,7 @@ export function HostConsole({
       setSessionEndBusy(true);
       setSessionEndError(null);
       await downloadSessionMetricsReport(sessionEndMetrics, format);
-      finalizeSessionClosure();
+      await finalizeSessionClosure();
     } catch (caught) {
       setSessionEndError(caught instanceof Error ? caught.message : "Could not export the report.");
       setSessionEndBusy(false);
@@ -962,7 +974,7 @@ export function HostConsole({
 
   const skipSessionReport = () => {
     setSessionEndError(null);
-    finalizeSessionClosure();
+    void finalizeSessionClosure();
   };
 
   useEffect(() => {

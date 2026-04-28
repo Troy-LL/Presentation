@@ -1,7 +1,7 @@
 "use client";
 
 import PartySocket from "partysocket";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   ClientMessage,
@@ -45,6 +45,14 @@ export function useSessionConnection({
   const snapshotRef = useRef<SessionSnapshot | null>(initialSnapshot);
   const prevInteractionRef = useRef<SessionSnapshot["currentInteraction"]>(null);
 
+  const scheduleSnapshotUpdate = (
+    updater: SessionSnapshot | ((current: SessionSnapshot | null) => SessionSnapshot | null)
+  ) => {
+    startTransition(() => {
+      setSnapshot(updater);
+    });
+  };
+
   useEffect(() => {
     setSnapshot(initialSnapshot);
     snapshotRef.current = initialSnapshot;
@@ -86,11 +94,11 @@ export function useSessionConnection({
       switch (message.type) {
         case "server.session_snapshot":
           snapshotRef.current = message.snapshot;
-          setSnapshot(message.snapshot);
+          scheduleSnapshotUpdate(message.snapshot);
           prevInteractionRef.current = message.snapshot.currentInteraction;
           break;
         case "server.session_closed":
-          setSnapshot((current) =>
+          scheduleSnapshotUpdate((current) =>
             current
               ? {
                   ...current,
@@ -101,9 +109,10 @@ export function useSessionConnection({
           );
           prevInteractionRef.current = null;
           setLatestReactionEmoji(null);
+          socket.close();
           break;
         case "server.participant_count":
-          setSnapshot((current) =>
+          scheduleSnapshotUpdate((current) =>
             current
               ? {
                   ...current,
@@ -115,7 +124,7 @@ export function useSessionConnection({
         case "server.interaction_started":
           setLatestReactionEmoji(null);
           prevInteractionRef.current = message.interaction;
-          setSnapshot((current) =>
+          scheduleSnapshotUpdate((current) =>
             current
               ? {
                   ...current,
@@ -126,7 +135,7 @@ export function useSessionConnection({
           );
           break;
         case "server.poll_votes_updated":
-          setSnapshot((current) => {
+          scheduleSnapshotUpdate((current) => {
             if (!current || current.currentInteraction?.type !== "poll") return current;
             return {
               ...current,
@@ -139,7 +148,7 @@ export function useSessionConnection({
           break;
         case "server.reactions_updated":
           setLatestReactionEmoji(message.latestEmoji);
-          setSnapshot((current) => {
+          scheduleSnapshotUpdate((current) => {
             if (!current || current.currentInteraction?.type !== "reactions") return current;
             return {
               ...current,
@@ -151,7 +160,7 @@ export function useSessionConnection({
           });
           break;
         case "server.open_text_responses_updated":
-          setSnapshot((current) => {
+          scheduleSnapshotUpdate((current) => {
             if (!current || current.currentInteraction?.type !== "open_text") return current;
             return {
               ...current,
@@ -164,7 +173,7 @@ export function useSessionConnection({
           });
           break;
         case "server.countdown_started":
-          setSnapshot((current) =>
+          scheduleSnapshotUpdate((current) =>
             current
               ? {
                   ...current,
@@ -175,7 +184,7 @@ export function useSessionConnection({
           );
           break;
         case "server.slide_set":
-          setSnapshot((current) => {
+          scheduleSnapshotUpdate((current) => {
             if (!current || !current.currentSlideDeck) return current;
             return {
               ...current,
@@ -193,7 +202,7 @@ export function useSessionConnection({
           setLatestAttentionNudge({ message: message.message, sentAt: message.sentAt });
           break;
         case "server.quiz_votes_updated":
-          setSnapshot((current) => {
+          scheduleSnapshotUpdate((current) => {
             if (!current || current.currentInteraction?.type !== "quiz") return current;
             return {
               ...current,
@@ -205,7 +214,7 @@ export function useSessionConnection({
           });
           break;
         case "server.poll_results_revealed":
-          setSnapshot((current) => {
+          scheduleSnapshotUpdate((current) => {
             if (!current || current.currentInteraction?.type !== "poll") return current;
             return {
               ...current,
@@ -217,7 +226,7 @@ export function useSessionConnection({
           });
           break;
         case "server.quiz_answer_revealed":
-          setSnapshot((current) => {
+          scheduleSnapshotUpdate((current) => {
             if (!current || current.currentInteraction?.type !== "quiz") return current;
             return {
               ...current,
@@ -231,7 +240,7 @@ export function useSessionConnection({
         case "server.interaction_cleared":
           setLatestReactionEmoji(null);
           prevInteractionRef.current = null;
-          setSnapshot((current) =>
+          scheduleSnapshotUpdate((current) =>
             current
               ? {
                   ...current,
@@ -252,7 +261,7 @@ export function useSessionConnection({
           setVoiceSession(message.voiceSession);
           break;
         case "server.slide_deck_updated":
-          setSnapshot((current) =>
+          scheduleSnapshotUpdate((current) =>
             current ? { ...current, currentSlideDeck: message.slideDeck } : current
           );
           break;
