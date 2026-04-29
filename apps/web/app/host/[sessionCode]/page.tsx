@@ -26,7 +26,9 @@ export default async function HostPage({
   const appOrigin =
     requestHeaders.get("origin") ??
     process.env.NEXT_PUBLIC_APP_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined);
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "https://hostingwiththelocals.vercel.app");
 
   return (
     <HostConsole

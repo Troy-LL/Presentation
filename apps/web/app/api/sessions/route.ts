@@ -11,7 +11,9 @@ export async function POST(request: Request) {
   const origin =
     request.headers.get("origin") ??
     process.env.NEXT_PUBLIC_APP_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "https://hostingwiththelocals.vercel.app");
 
   try {
     for (let attempt = 0; attempt < 5; attempt += 1) {
