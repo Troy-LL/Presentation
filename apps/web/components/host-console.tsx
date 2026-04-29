@@ -431,10 +431,10 @@ export function HostConsole({
     return () => { active = false; };
   }, [sessionCode]);
 
-  const joinUrl = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return `${window.location.origin}/join?code=${sessionCode}`;
-  }, [sessionCode]);
+  const joinUrl = useMemo(
+    () => `/join?code=${sessionCode}`,
+    [sessionCode]
+  );
 
   const {
     snapshot,
@@ -1121,6 +1121,7 @@ export function HostConsole({
           <MultiDeviceBadge 
             activeHosts={snapshot?.activeHosts ?? 1} 
             hostToken={hostToken} 
+            sessionCode={sessionCode}
           />
         )}
         {/* Mobile End Session button pushed left */}

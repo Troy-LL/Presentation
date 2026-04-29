@@ -1,13 +1,31 @@
+"use client";
+
 import { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
 type Props = {
   activeHosts: number;
   hostToken: string;
+  sessionCode: string;
 };
 
-export function MultiDeviceBadge({ activeHosts, hostToken }: Props) {
+export function MultiDeviceBadge({ activeHosts, hostToken, sessionCode }: Props) {
   const [showQr, setShowQr] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const coHostUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/host/${sessionCode}?token=${hostToken}`
+    : `/host/${sessionCode}?token=${hostToken}`;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(coHostUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error("Failed to copy", e);
+    }
+  };
 
   return (
     <div className="relative">
@@ -38,12 +56,29 @@ export function MultiDeviceBadge({ activeHosts, hostToken }: Props) {
             </p>
             
             <div className="mt-4 flex justify-center rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/5 p-4">
-              <QRCodeSVG size={140} value={hostToken} />
+              <QRCodeSVG size={140} value={coHostUrl} />
             </div>
             
-            <p className="mt-3 text-center text-[10px] font-mono tracking-wider text-slate-500">
-              {hostToken.substring(0, 8)}...
-            </p>
+            <button
+              onClick={handleCopy}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+            >
+              {copied ? (
+                <>
+                  <svg className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-green-600">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Copy Link
+                </>
+              )}
+            </button>
           </div>
         </>
       )}

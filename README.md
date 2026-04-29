@@ -15,6 +15,12 @@
     <a href="#✨-key-features">Features</a> •
     <a href="#🛠-tech-stack">Tech Stack</a>
   </p>
+
+  <p align="center">
+    <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTroy-LL%2FPresentation&env=NEXT_PUBLIC_PARTYKIT_HOST,PARTYKIT_SERVER_URL,BLOB_READ_WRITE_TOKEN">
+      <img src="https://vercel.com/button" alt="Deploy with Vercel">
+    </a>
+  </p>
 </div>
 
 ---
@@ -50,6 +56,30 @@ There are tools out there, but they usually come with strings attached—they ha
 | **🔥 Emoji Reactions** | Let the audience flood the screen with reactions during key moments. |
 | **⏲️ Sync Timers** | Start a countdown that hits zero on every device at the exact same time. |
 | **🔔 Attention Nudge** | Vibrate every phone in the room and show a custom alert to bring focus back to you. |
+
+## 🏗 Architecture Overview
+
+The application follows a distributed architecture designed for low latency and high availability:
+
+- **Next.js Frontend (apps/web)**: Handles the UI, PDF rendering, and static routing. It uses React Server Components where possible for performance.
+- **PartyKit Server (apps/web/partykit)**: A specialized WebSocket server built on Cloudflare Workers. It maintains the "source of truth" for each session, syncing interaction states (polls, reactions, slide position) across all connected participants.
+- **Shared Types (packages/types)**: A shared package that ensures type safety for messages sent between the client and the real-time server.
+
+### Roles
+- **Host**: Creates a session, uploads slides, and controls the flow of interactions. The Host has a unique `hostToken` stored in session storage.
+- **Audience**: Joins via a simple URL/QR code. They receive real-time updates and participate in interactions without needing an account.
+
+---
+
+## 🚢 Deployment Matrix
+
+Choose the strategy that fits your event's scale and network constraints.
+
+| Strategy | Ideal For | Difficulty | Infrastructure |
+| :--- | :--- | :--- | :--- |
+| **Local (LAN)** | Classrooms, local meetups, areas with restricted Wi-Fi. | 🟢 Easy | Your laptop + local Wi-Fi. |
+| **Cloud (Vercel)** | Large conferences, public webinars, distributed teams. | 🟡 Medium | Vercel + [PartyKit Cloud](https://www.partykit.io/docs/deploying). |
+| **Self-Hosted** | Private servers, corporate environments, high-privacy needs. | 🔴 Advanced | Docker + any VPS. |
 
 ---
 

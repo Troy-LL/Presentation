@@ -8,7 +8,10 @@ import { generateSessionCode } from "@/lib/session-code";
 
 // Force reload
 export async function POST(request: Request) {
-  const origin = request.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const origin =
+    request.headers.get("origin") ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
   try {
     for (let attempt = 0; attempt < 5; attempt += 1) {
