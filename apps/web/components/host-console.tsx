@@ -227,10 +227,12 @@ function calculateHostAnalytics(snapshot: SessionSnapshot | null): HostAnalytics
 
 export function HostConsole({
   sessionCode,
-  tokenFromUrl
+  tokenFromUrl,
+  appOrigin
 }: {
   sessionCode: string;
   tokenFromUrl?: string;
+  appOrigin?: string;
 }) {
   const [initialSnapshot, setInitialSnapshot] = useState<SessionSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -431,10 +433,10 @@ export function HostConsole({
     return () => { active = false; };
   }, [sessionCode]);
 
-  const joinUrl = useMemo(
-    () => `/join?code=${sessionCode}`,
-    [sessionCode]
-  );
+  const joinUrl = useMemo(() => {
+    const origin = appOrigin?.replace(/\/$/, "");
+    return origin ? `${origin}/join?code=${sessionCode}` : `/join?code=${sessionCode}`;
+  }, [appOrigin, sessionCode]);
 
   const {
     snapshot,
